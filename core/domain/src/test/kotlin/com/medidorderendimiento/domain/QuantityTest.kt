@@ -3,8 +3,8 @@ package com.medidorderendimiento.domain
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
+import kotlin.test.assertFalse
 import kotlin.test.assertIs
-import kotlin.test.assertNotEquals
 
 class QuantityTest {
     @Test
@@ -18,8 +18,8 @@ class QuantityTest {
         assertIs<Quantity.Volume>(milliliters)
         assertIs<Quantity.Units>(units)
         assertIs<Quantity.Portions>(portions)
-        assertNotEquals(grams, milliliters)
-        assertNotEquals(units, portions)
+        assertFalse(grams.equals(milliliters))
+        assertFalse(units.equals(portions))
     }
 
     @Test
