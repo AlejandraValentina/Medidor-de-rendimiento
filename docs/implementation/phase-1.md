@@ -66,6 +66,10 @@ compiló con el compilador Kotlin 2.0.21 incluido en Gradle 8.14.4. Los tests
 quedan configurados para ejecutarse con Kotlin Test/JUnit Platform en cuanto
 Gradle pueda resolver sus artefactos.
 
+La certificación final de Fase 1 depende del resultado real del workflow
+`Phase 1 CI` de GitHub Actions. Hasta que sus tareas de tests, ensamblado y lint
+terminen correctamente, esos resultados no se consideran certificados.
+
 ## Desviaciones
 
 La especificación fue suministrada en la raíz como
