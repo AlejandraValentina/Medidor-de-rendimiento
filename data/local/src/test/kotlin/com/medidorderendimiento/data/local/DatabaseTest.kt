@@ -106,13 +106,39 @@ class DatabaseTest {
             windowEnd = CivilDay.parse("2026-08-24"), algorithmVersion = "algorithm-v1", policyVersion = "tdee-v1",
             inputRevision = revision, evidenceKey = "e-$revision", revision = revision)
         database.tdeeEstimates().insert(estimate("one", 1, 2_400_000).toEntity(LocalId("profile")))
-        database.tdeeEstimates().insert(estimate("two", 2, 2_410_000).toEntity(LocalId("profile")))
+        database.tdeeEstimates().insert(estimate("two", 2, 2_410_000).copy(
+            estimationReasons = setOf(TdeeEstimationReason.NON_POSITIVE_OBSERVATIONAL_RESULT)).toEntity(LocalId("profile")))
         assertEquals(2, database.tdeeEstimates().history("profile").size)
         val current = database.tdeeEstimates().currentHistory("profile").single().toDomain()
         assertEquals(2_410_000, current.centralEnergy?.millicalories)
         assertEquals(2, current.revision)
         assertNull(current.lowEnergy)
         assertNull(current.highEnergy)
+        assertEquals(setOf(TdeeEstimationReason.NON_POSITIVE_OBSERVATIONAL_RESULT), current.estimationReasons)
+    }
+
+
+    @Test fun `retrospective correction prepares next revision before stability calculation`() {
+        fun estimate(day: Int, energy: Long, revision: Long = 1, evidence: String = "e-$day") = TdeeEstimate(
+            LocalId("t-$day-$revision"), CivilDay.parse("2026-08-${day.toString().padStart(2, '0')}"),
+            TdeeEstimateKind.OBSERVATIONAL, EnergyAmount.ofKilocalories(energy), maturity = TdeeMaturity.ADAPTIVE,
+            nutritionQuality = NutritionQuality(10, 10, 10, 0, 0, 0, 0, 1_000_000, DataQualityLabel.HIGH, emptySet()),
+            weightConfidence = WeightTrendConfidence.HIGH, windowStart = CivilDay.parse("2026-07-01"),
+            windowEnd = CivilDay.parse("2026-08-${day.toString().padStart(2, '0')}"), algorithmVersion = "a",
+            policyVersion = "p", inputRevision = revision, evidenceKey = evidence, revision = revision)
+        val store = Phase2aStore(database)
+        (1..19 step 2).forEach { day -> database.tdeeEstimates().insert(estimate(day, 2_400).toEntity(LocalId("profile"))) }
+        assertEquals(EstimatorStabilityStatus.STABLE, EstimatorStabilityCalculator().calculate(store.tdeeHistory(LocalId("profile"))).status)
+        val corrected = estimate(19, 2_700, revision = 2, evidence = "corrected")
+        val prepared = store.prepareTdee(LocalId("profile"), corrected)
+        assertEquals(2, prepared.estimate.revision)
+        assertEquals(10, prepared.currentHistory.size)
+        assertEquals(2_700_000, prepared.currentHistory.single { it.referenceDay == corrected.referenceDay }.centralEnergy?.millicalories)
+        val stability = EstimatorStabilityCalculator().calculate(prepared.currentHistory)
+        store.saveTdee(LocalId("profile"), prepared, stability)
+        assertEquals(2, database.tdeeEstimates().latestForDay("profile", corrected.referenceDay.value.toEpochDay())?.revision)
+        assertEquals(10, stability.distinctEstimateDays)
+        assertEquals(EstimatorStabilityStatus.UNSTABLE, stability.status)
     }
 
     @Test fun `retrospective day identifies only estimates whose windows are affected`() {

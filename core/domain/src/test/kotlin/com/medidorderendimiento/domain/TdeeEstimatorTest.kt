@@ -16,6 +16,43 @@ class TdeeEstimatorTest {
         assertEquals(2_485, estimate(days(28, 2_100), trend(-350)).centralEnergy?.millicalories?.div(1_000))
     }
 
+    @Test fun `non-positive observational results are unavailable instead of clamped`() {
+        val zero = estimateInWindow(days(14, 7_700), trend(7_000), 14)
+        val negative = estimateInWindow(days(14, 7_700), trend(8_000), 14)
+        listOf(zero, negative).forEach {
+            assertNull(it.centralEnergy)
+            assertEquals(TdeeMaturity.UNAVAILABLE, it.maturity)
+            assertEquals(setOf(TdeeEstimationReason.NON_POSITIVE_OBSERVATIONAL_RESULT), it.estimationReasons)
+        }
+        assertNotNull(estimateInWindow(days(14, 2_100), trend(0), 14).centralEnergy)
+    }
+
+    @Test fun `maturity boundaries follow 14 21 and 28 comparable days`() {
+        assertEquals(TdeeMaturity.UNAVAILABLE, estimateInWindow(days(13, 2_100), trend(0), 13).maturity)
+        assertEquals(TdeeMaturity.PROVISIONAL, estimateInWindow(days(14, 2_100), trend(0), 14).maturity)
+        assertEquals(TdeeMaturity.PROVISIONAL, estimateInWindow(days(20, 2_100), trend(0), 20).maturity)
+        assertEquals(TdeeMaturity.ADAPTIVE, estimateInWindow(days(21, 2_100), trend(0), 21).maturity)
+        assertEquals(TdeeMaturity.ADAPTIVE, estimateInWindow(days(27, 2_100), trend(0), 28).maturity)
+        assertEquals(TdeeMaturity.HIGH_QUALITY, estimateInWindow(days(28, 2_100), trend(0), 28).maturity)
+    }
+
+    @Test fun `estimated energy penalty uses policy coefficient`() {
+        val day = TdeeNutritionDay(start, TdeeDiaryState.CLOSED_WITH_ESTIMATES, kcal(1_600), kcal(400))
+        val quality = NutritionQualityCalculator().calculate(listOf(day), 1).first
+        assertEquals(200_000, quality.estimatedEnergyPermillion)
+        assertEquals(900_000, quality.indexPermillion)
+    }
+
+    @Test fun `evidence key changes with relevant weight and nutrition evidence`() {
+        val policy = TdeePolicy()
+        val nutrition = days(14, 2_100)
+        val original = TdeeEvidenceKey.build(reference, policy, trend(0), nutrition)
+        assertNotEquals(original, TdeeEvidenceKey.build(reference, policy, trend(-100), nutrition))
+        assertNotEquals(original, TdeeEvidenceKey.build(reference, policy, trend(0),
+            nutrition.mapIndexed { index, day -> if (index == 0) day.copy(pendingEntries = 1, sourceRevision = 2) else day }))
+        assertEquals(original, TdeeEvidenceKey.build(reference, policy, trend(0), nutrition.reversed()))
+    }
+
     @Test fun `TD-03 missing nutrition is never filled`() {
         val result = estimate(days(8, 2_100), trend(0))
         assertNull(result.centralEnergy)
@@ -61,6 +98,12 @@ class TdeeEstimatorTest {
 
     private fun estimate(days: List<TdeeNutritionDay>, trend: WeightTrend) = estimator.estimate(
         LocalId("tdee"), reference, start, days, trend, 1, "evidence")
+
+    private fun estimateInWindow(days: List<TdeeNutritionDay>, trend: WeightTrend, windowDays: Int): TdeeEstimate {
+        val windowStart = CivilDay.parse(reference.value.minusDays((windowDays - 1).toLong()).toString())
+        val shifted = days.mapIndexed { index, day -> day.copy(civilDay = CivilDay.parse(windowStart.value.plusDays(index.toLong()).toString())) }
+        return estimator.estimate(LocalId("boundary-$windowDays"), reference, windowStart, shifted, trend, 1, "boundary-$windowDays")
+    }
 
     private fun days(count: Int, kcal: Long, plan: String = "plan", offset: Int = 0) = (0 until count).map {
         TdeeNutritionDay(CivilDay.parse("2026-08-01").plusDays((offset + it).toLong()), TdeeDiaryState.CLOSED_CONFIRMED,

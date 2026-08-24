@@ -9,6 +9,8 @@
 
 El modelo inicial usa `k = 7700 kcal/kg` dentro de `tdee-v1`. Es una heurística de ingeniería versionada, no una constante biológica universal. El cálculo usa enteros canónicos y `BigDecimal` con redondeo explícito; el plan base nunca se usa como ingesta observada.
 
+Un resultado observacional igual o menor que cero queda no disponible con la razón `NON_POSITIVE_OBSERVATIONAL_RESULT`; nunca se convierte silenciosamente en cero. La madurez requiere 14 días comparables para `PROVISIONAL`, 21 para `ADAPTIVE` y 28, calidad nutricional alta y WeightTrend alto para `HIGH_QUALITY`. El factor de estimación aplica `1 - 0,5 × proporción estimada`; el coeficiente `0,5` pertenece explícitamente a `tdee-v1`.
+
 ## Elegibilidad y contemporaneidad
 
 Solo son elegibles días `CLOSED_CONFIRMED` o `CLOSED_WITH_ESTIMATES` bajo el umbral versionado. Los días abiertos, incompletos, excluidos y de ingesta cero confirmada no se incorporan silenciosamente. Pendientes o energías desconocidas limitan la calidad. Cuando hay más de una versión de plan, se utiliza determinísticamente el segmento homogéneo más reciente y se expone `MIXED_PLAN_VERSIONS`.
@@ -24,6 +26,8 @@ Una edición retrospectiva puede localizar bajo demanda las estimaciones cuya ve
 ## stability-v1
 
 La política conserva los umbrales normativos: 7 fechas mínimas, 10 fechas sobre 14 días para estabilidad, MAD relativo 0,025, amplitud 0,05, deriva 0,04, inversiones 0,035 y amplitud crítica temprana 0,06. Calidad de inputs y estabilidad siguen siendo dimensiones independientes.
+
+La deriva compara los siete días civiles más recientes con los siete inmediatamente anteriores. Ambos períodos necesitan al menos dos observaciones independientes; sin dos períodos comparables no se concede `STABLE`. La clave de evidencia incluye día de referencia, versiones, pendiente y calidad completa de WeightTrend, cobertura, variabilidad, razones/outliers y estado, energía, pendientes, desconocidos, plan y revisión de cada día nutricional.
 
 ## Verificación
 

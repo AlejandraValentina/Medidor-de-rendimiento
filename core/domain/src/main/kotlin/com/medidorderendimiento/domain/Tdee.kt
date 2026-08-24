@@ -9,6 +9,7 @@ enum class DataQualityLabel { INSUFFICIENT, LOW, MODERATE, HIGH }
 enum class TdeeMaturity { UNAVAILABLE, PRIOR_ONLY, PROVISIONAL, ADAPTIVE, HIGH_QUALITY }
 enum class TdeeEstimateKind { USER_PROVIDED, POPULATION_PRIOR, WEARABLE_CONTEXT, OBSERVATIONAL, BLENDED }
 enum class EstimatorStabilityStatus { INSUFFICIENT_HISTORY, UNSTABLE, STABILIZING, STABLE }
+enum class TdeeEstimationReason { NON_POSITIVE_OBSERVATIONAL_RESULT }
 
 enum class NutritionQualityReason {
     INSUFFICIENT_ELIGIBLE_DAYS, OPEN_OR_INCOMPLETE_DAYS, EXCLUDED_CONTEXT_DAYS,
@@ -23,8 +24,9 @@ data class TdeeNutritionDay(
     val pendingEntries: Int = 0,
     val unknownEnergyEntries: Int = 0,
     val planVersionId: LocalId? = null,
+    val sourceRevision: Long = 1,
 ) {
-    init { require(pendingEntries >= 0 && unknownEnergyEntries >= 0) }
+    init { require(pendingEntries >= 0 && unknownEnergyEntries >= 0 && sourceRevision > 0) }
     val actualEnergy: EnergyAmount?
         get() {
             val known = listOfNotNull(confirmedEnergy, estimatedEnergy)
@@ -50,13 +52,46 @@ data class TdeePolicy(
     val algorithmVersion: String = "theil-sen-energy-balance-v1",
     val energyCoefficientKcalPerKg: Long = 7_700,
     val maximumEstimatedEnergyPermillion: Int = 350_000,
-    val provisionalMinimumDays: Int = 10,
-    val adaptiveMinimumDays: Int = 18,
-    val highQualityMinimumDays: Int = 24,
+    val estimatedEnergyPenaltyPermillion: Int = 500_000,
+    val provisionalMinimumDays: Int = 14,
+    val adaptiveMinimumDays: Int = 21,
+    val highQualityMinimumDays: Int = 28,
 ) {
     init {
         require(energyCoefficientKcalPerKg > 0)
         require(maximumEstimatedEnergyPermillion in 0..1_000_000)
+        require(estimatedEnergyPenaltyPermillion in 0..1_000_000)
+    }
+}
+
+object TdeeEvidenceKey {
+    fun build(
+        referenceDay: CivilDay,
+        policy: TdeePolicy,
+        weightTrend: WeightTrend,
+        nutritionDays: List<TdeeNutritionDay>,
+    ): String = buildString {
+        append("reference=").append(referenceDay.value)
+        append("|algorithm=").append(policy.algorithmVersion)
+        append("|policy=").append(policy.version)
+        append("|weight=").append(weightTrend.weeklyRateGrams)
+            .append(':').append(weightTrend.confidence)
+            .append(':').append(weightTrend.coverage.distinctDays)
+            .append(':').append(weightTrend.coverage.spanDays)
+            .append(':').append(weightTrend.coverage.maximumGapDays)
+            .append(':').append(weightTrend.variabilityGrams)
+        append("|weightReasons=").append(weightTrend.reasons.map { it.name }.sorted().joinToString(","))
+        append("|outliers=").append(weightTrend.possibleOutliers.map { it.measurement.id.value }.sorted().joinToString(","))
+        nutritionDays.sortedBy { it.civilDay }.forEach { day ->
+            append("|day=").append(day.civilDay.value)
+                .append(':').append(day.state)
+                .append(':').append(day.confirmedEnergy?.millicalories)
+                .append(':').append(day.estimatedEnergy?.millicalories)
+                .append(':').append(day.pendingEntries)
+                .append(':').append(day.unknownEnergyEntries)
+                .append(':').append(day.planVersionId?.value)
+                .append(':').append(day.sourceRevision)
+        }
     }
 }
 
@@ -77,6 +112,7 @@ data class TdeeEstimate(
     val policyVersion: String,
     val inputRevision: Long,
     val evidenceKey: String,
+    val estimationReasons: Set<TdeeEstimationReason> = emptySet(),
     val revision: Long = 1,
 ) {
     init { require(inputRevision > 0 && revision > 0) }
@@ -114,7 +150,8 @@ class NutritionQualityCalculator(private val policy: TdeePolicy = TdeePolicy()) 
         if (unknown > 0) reasons += NutritionQualityReason.UNKNOWN_ENERGY
         if (candidate.any { it.state == TdeeDiaryState.ZERO_INTAKE_CONFIRMED }) reasons += NutritionQualityReason.ZERO_INTAKE_REQUIRES_REVIEW
         val closureFactor = (eligible.size.toLong() * 1_000_000 / requiredDays).coerceAtMost(1_000_000).toInt()
-        val estimationFactor = 1_000_000 - estimatedRatio
+        val estimationPenalty = estimatedRatio.toLong() * policy.estimatedEnergyPenaltyPermillion / 1_000_000
+        val estimationFactor = 1_000_000 - estimationPenalty.toInt()
         val pendingFactor = if (pending == 0) 1_000_000 else 0
         val consistencyFactor = if (unknown == 0) 1_000_000 else 0
         val index = minOf(closureFactor, estimationFactor, pendingFactor, consistencyFactor)
@@ -159,7 +196,9 @@ class TdeeEstimator(private val policy: TdeePolicy = TdeePolicy()) {
         val (quality, eligible) = qualityCalculator.calculate(inWindow, required)
         val canObserve = weightTrend.weeklyRateGrams != null && weightTrend.confidence != WeightTrendConfidence.UNAVAILABLE &&
             eligible.size >= policy.provisionalMinimumDays
-        val central = if (canObserve) calculateCentral(eligible, requireNotNull(weightTrend.weeklyRateGrams)) else null
+        val calculated = if (canObserve) calculateCentral(eligible, requireNotNull(weightTrend.weeklyRateGrams)) else null
+        val invalidResult = calculated != null && calculated <= 0
+        val central = calculated?.takeIf { it > 0 }?.let(EnergyAmount::ofMillicalories)
         val maturity = when {
             central == null -> TdeeMaturity.UNAVAILABLE
             span >= 28 && eligible.size >= policy.highQualityMinimumDays && quality.label == DataQualityLabel.HIGH && weightTrend.confidence == WeightTrendConfidence.HIGH -> TdeeMaturity.HIGH_QUALITY
@@ -169,16 +208,17 @@ class TdeeEstimator(private val policy: TdeePolicy = TdeePolicy()) {
         return TdeeEstimate(id, referenceDay, TdeeEstimateKind.OBSERVATIONAL,
             central, maturity = maturity, nutritionQuality = quality, weightConfidence = weightTrend.confidence,
             windowStart = windowStart, windowEnd = referenceDay, algorithmVersion = policy.algorithmVersion,
-            policyVersion = policy.version, inputRevision = inputRevision, evidenceKey = evidenceKey)
+            policyVersion = policy.version, inputRevision = inputRevision, evidenceKey = evidenceKey,
+            estimationReasons = if (invalidResult) setOf(TdeeEstimationReason.NON_POSITIVE_OBSERVATIONAL_RESULT) else emptySet())
     }
 
-    private fun calculateCentral(days: List<TdeeNutritionDay>, weeklyRateGrams: Long): EnergyAmount {
+    private fun calculateCentral(days: List<TdeeNutritionDay>, weeklyRateGrams: Long): Long {
         val meanMillicalories = days.map { requireNotNull(it.actualEnergy).millicalories }.averageBigDecimal()
         val adjustmentKcal = BigDecimal.valueOf(policy.energyCoefficientKcalPerKg)
             .multiply(BigDecimal.valueOf(weeklyRateGrams)).divide(BigDecimal.valueOf(7_000), 12, RoundingMode.HALF_UP)
         val resultMillicalories = meanMillicalories.subtract(adjustmentKcal.multiply(BigDecimal.valueOf(1_000)))
             .setScale(0, RoundingMode.HALF_UP).longValueExact()
-        return EnergyAmount.ofMillicalories(resultMillicalories.coerceAtLeast(0))
+        return resultMillicalories
     }
 
     private fun List<Long>.averageBigDecimal(): BigDecimal = fold(BigDecimal.ZERO) { acc, value -> acc + BigDecimal.valueOf(value) }
@@ -227,8 +267,12 @@ class EstimatorStabilityCalculator(private val policy: StabilityPolicy = Stabili
         val mad = median(values.map { abs(it - median) })
         val madRatio = ratio(mad, median)
         val peak = ratio(values.max() - values.min(), median)
-        val half = values.size / 2
-        val drift = if (half == 0 || values.size - half < 2) null else ratio(abs(median(values.take(half)) - median(values.drop(half))), median)
+        val lastDay = independent.last().referenceDay.value
+        val recent = independent.filter { it.referenceDay.value in lastDay.minusDays(6)..lastDay }
+            .map { requireNotNull(it.centralEnergy).millicalories }
+        val previous = independent.filter { it.referenceDay.value in lastDay.minusDays(13)..lastDay.minusDays(7) }
+            .map { requireNotNull(it.centralEnergy).millicalories }
+        val drift = if (recent.size < 2 || previous.size < 2) null else ratio(abs(median(previous) - median(recent)), median)
         val inversions = values.zipWithNext { a, b -> b - a }.zipWithNext().count { (a, b) ->
             a.sign != b.sign && maxOf(abs(a), abs(b)) * 1_000_000L / median >= policy.alternatingInversionThresholdPermillion
         }
@@ -241,7 +285,7 @@ class EstimatorStabilityCalculator(private val policy: StabilityPolicy = Stabili
         val critical = peak > policy.earlyUnstablePeakToPeakPermillion || StabilityReason.EXCESSIVE_DRIFT in reasons || StabilityReason.ALTERNATING_INVERSION in reasons
         val stable = independent.size >= policy.stableDistinctEstimateDays && horizon >= policy.stableHorizonDays &&
             madRatio <= policy.maximumRelativeMadPermillion && peak <= policy.maximumPeakToPeakPermillion &&
-            (drift ?: 0) <= policy.maximumConsecutivePeriodDriftPermillion && inversions < 2
+            drift != null && drift <= policy.maximumConsecutivePeriodDriftPermillion && inversions < 2
         val status = when {
             critical -> EstimatorStabilityStatus.UNSTABLE
             stable -> EstimatorStabilityStatus.STABLE

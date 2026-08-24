@@ -162,5 +162,6 @@ data class TdeeEstimateEntity(
     val policyVersion: String,
     val inputRevision: Long,
     val evidenceKey: String,
+    val estimationReasons: String,
     val revision: Long,
 )

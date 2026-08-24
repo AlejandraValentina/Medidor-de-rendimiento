@@ -19,7 +19,8 @@ class Phase2aViewModel(
     private val zoneId: ZoneId = ZoneId.systemDefault(),
 ) : ViewModel() {
     private val weightTrendCalculator = WeightTrendCalculator()
-    private val tdeeEstimator = TdeeEstimator()
+    private val tdeePolicy = TdeePolicy()
+    private val tdeeEstimator = TdeeEstimator(tdeePolicy)
     private val stabilityCalculator = EstimatorStabilityCalculator()
     private val profileId = LocalId("local-profile")
     private val _state = MutableStateFlow(Phase2aUiState())
@@ -39,14 +40,14 @@ class Phase2aViewModel(
         val trend = weightTrendCalculator.calculate(weights.map(::WeightObservation), day)
         val windowStart = CivilDay.parse(day.value.minusDays(27).toString())
         val nutritionDays = store.tdeeNutritionDays(profileId, windowStart, day)
-        val evidenceKey = nutritionDays.joinToString("|") {
-            "${it.civilDay.value}:${it.state}:${it.actualEnergy?.millicalories}:${it.estimatedEnergy?.millicalories}:${it.pendingEntries}:${it.unknownEnergyEntries}:${it.planVersionId?.value}"
-        } + "|weight:${trend.weeklyRateGrams}:${trend.coverage.distinctDays}:${trend.coverage.spanDays}"
+        val evidenceKey = TdeeEvidenceKey.build(day, tdeePolicy, trend, nutritionDays)
+        val inputRevision = nutritionDays.maxOfOrNull { it.sourceRevision } ?: 1
         val estimate = tdeeEstimator.estimate(LocalId(UUID.randomUUID().toString()), day, windowStart, nutritionDays,
-            trend, 1, evidenceKey)
-        val previous = store.tdeeHistory(profileId)
-        val stability = stabilityCalculator.calculate(previous + estimate)
-        val persistedEstimate = store.saveTdee(profileId, estimate.copy(stabilityStatus = stability.status), stability)
+            trend, inputRevision, evidenceKey)
+        val prepared = store.prepareTdee(profileId, estimate)
+        val stability = stabilityCalculator.calculate(prepared.currentHistory)
+        val persistedEstimate = store.saveTdee(profileId,
+            prepared.copy(estimate = prepared.estimate.copy(stabilityStatus = stability.status)), stability)
         _state.value = Phase2aUiState(
             civilDay = day,
             plan = store.latestPlan(profileId),

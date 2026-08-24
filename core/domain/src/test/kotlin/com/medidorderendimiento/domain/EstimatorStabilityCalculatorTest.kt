@@ -37,6 +37,22 @@ class EstimatorStabilityCalculatorTest {
             calculator.calculate(series(listOf(2_300, 2_305, 2_310, 2_315, 2_450, 2_455, 2_460, 2_465), spacing = 2)).status)
     }
 
+    @Test fun `irregular sampling compares consecutive civil-week periods rather than list halves`() {
+        val offsets = listOf(0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 14, 18, 20)
+        val estimates = offsets.map { offset -> estimate(offset, if (offset < 14) 2_400 else 2_520) }
+        val result = calculator.calculate(estimates)
+        assertNotNull(result.consecutivePeriodDriftPermillion)
+        assertTrue(requireNotNull(result.consecutivePeriodDriftPermillion) > 40_000)
+        assertEquals(EstimatorStabilityStatus.UNSTABLE, result.status)
+    }
+
+    @Test fun `stable requires two comparable chronological periods`() {
+        val clustered = (listOf(0, 1) + (14..21)).map { estimate(it, 2_400) }
+        val result = calculator.calculate(clustered)
+        assertNull(result.consecutivePeriodDriftPermillion)
+        assertNotEquals(EstimatorStabilityStatus.STABLE, result.status)
+    }
+
     @Test fun `ES-08 low MAD cannot compensate excessive amplitude`() {
         val result = calculator.calculate(series(listOf(2_400, 2_400, 2_400, 2_400, 2_400, 2_400, 2_550)))
         assertEquals(0, result.madPermillion)

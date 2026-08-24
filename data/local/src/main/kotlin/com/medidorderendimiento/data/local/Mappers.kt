@@ -94,7 +94,8 @@ fun TdeeEstimate.toEntity(profileId: LocalId, stability: EstimatorStability? = n
     nutritionQuality.reasons.joinToString(",") { it.name }, weightConfidence.name,
     (stability?.status ?: stabilityStatus).name, stability?.madPermillion, stability?.peakToPeakPermillion,
     stability?.consecutivePeriodDriftPermillion, windowStart.toEpochDay(), windowEnd.toEpochDay(),
-    algorithmVersion, policyVersion, inputRevision, evidenceKey, revision,
+    algorithmVersion, policyVersion, inputRevision, evidenceKey,
+    estimationReasons.joinToString(",") { it.name }, revision,
 )
 
 fun TdeeEstimateEntity.toDomain() = TdeeEstimate(
@@ -106,5 +107,6 @@ fun TdeeEstimateEntity.toDomain() = TdeeEstimate(
         DataQualityLabel.valueOf(qualityLabel), qualityReasons.split(',').filter(String::isNotBlank).map(NutritionQualityReason::valueOf).toSet()),
     WeightTrendConfidence.valueOf(weightConfidence), EstimatorStabilityStatus.valueOf(stabilityStatus),
     windowStartEpochDay.toCivilDay(), windowEndEpochDay.toCivilDay(), algorithmVersion, policyVersion,
-    inputRevision, evidenceKey, revision,
+    inputRevision, evidenceKey,
+    estimationReasons.split(',').filter(String::isNotBlank).map(TdeeEstimationReason::valueOf).toSet(), revision,
 )
