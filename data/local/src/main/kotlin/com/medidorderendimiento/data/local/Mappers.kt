@@ -7,7 +7,11 @@ import java.time.LocalDate
 internal fun CivilDay.toEpochDay(): Long = value.toEpochDay()
 internal fun Long.toCivilDay(): CivilDay = CivilDay.parse(LocalDate.ofEpochDay(this).toString())
 
-data class StoredFoodProduct(val product: FoodProduct, val nutrition: NutritionFacts)
+data class StoredFoodProduct(
+    val product: FoodProduct,
+    val nutrition: NutritionFacts,
+    val basisQuantity: Quantity = Quantity.Mass.ofGrams(100),
+)
 data class StoredDiaryDay(
     val profileId: LocalId,
     val civilDay: CivilDay,
@@ -35,15 +39,19 @@ fun WeightMeasurementEntity.toDomain() = WeightMeasurement(
     LocalId(weightId), BodyMass.ofGrams(bodyMassGrams), Instant.ofEpochMilli(recordedAtEpochMillis),
     civilDayEpochDay.toCivilDay(), ManualSource.valueOf(sourceKind), revision,
 )
-fun StoredFoodProduct.toEntity(revision: Long = 1) = FoodProductEntity(
+fun StoredFoodProduct.toEntity(revision: Long = 1): FoodProductEntity {
+    val (basisValue, basisUnit) = basisQuantity.stored()
+    return FoodProductEntity(
     product.id.value, product.name, product.name.trim().lowercase(), nutrition.energy?.millicalories,
-    nutrition.protein?.milligrams, nutrition.carbohydrates?.milligrams, nutrition.fat?.milligrams, revision,
-)
+        nutrition.protein?.milligrams, nutrition.carbohydrates?.milligrams, nutrition.fat?.milligrams, revision,
+        basisValue, basisUnit,
+    )
+}
 fun FoodProductEntity.toDomain() = StoredFoodProduct(
     FoodProduct(LocalId(productId), displayName), NutritionFacts(
         energyMillicalories?.let(EnergyAmount::ofMillicalories), proteinMilligrams?.let(NutrientAmount::ofMilligrams),
         carbohydratesMilligrams?.let(NutrientAmount::ofMilligrams), fatMilligrams?.let(NutrientAmount::ofMilligrams),
-    ),
+    ), storedQuantity(basisQuantityValue, basisQuantityUnit),
 )
 private fun Quantity.stored(): Pair<Long, String> = when (this) {
     is Quantity.Mass -> milligrams to "MASS_MG"
@@ -62,14 +70,14 @@ fun FoodEntry.toEntity(profileId: LocalId): FoodEntryEntity {
     val (value, unit) = consumedQuantity.stored()
     return FoodEntryEntity(id.value, profileId.value, id.value, product.id.value, recordedAt.toEpochMilli(), civilDay.toEpochDay(),
         value, unit, nutrition.energy?.millicalories, nutrition.protein?.milligrams, nutrition.carbohydrates?.milligrams,
-        nutrition.fat?.milligrams, quantityNature.name, source.name, revision)
+        nutrition.fat?.milligrams, quantityNature.name, source.name, revision, confirmation.name, nutrientNature.name)
 }
 fun FoodEntryEntity.toDomain(product: FoodProduct) = FoodEntry(
     LocalId(foodEntryId), product, storedQuantity(quantityValue, quantityUnit),
     NutritionFacts(energyMillicalories?.let(EnergyAmount::ofMillicalories), proteinMilligrams?.let(NutrientAmount::ofMilligrams),
         carbohydratesMilligrams?.let(NutrientAmount::ofMilligrams), fatMilligrams?.let(NutrientAmount::ofMilligrams)),
     QuantityNature.valueOf(quantityNature), Instant.ofEpochMilli(recordedAtEpochMillis), civilDayEpochDay.toCivilDay(),
-    ManualSource.valueOf(sourceKind), revision,
+    ManualSource.valueOf(sourceKind), revision, EntryConfirmation.valueOf(confirmationStatus), NutrientNature.valueOf(nutrientNature),
 )
 fun StoredDiaryDay.toEntity() = NutritionDiaryDayEntity(profileId.value, civilDay.toEpochDay(), state.name,
     closedAt?.toEpochMilli(), updatedAt.toEpochMilli(), revision, exclusionReason)

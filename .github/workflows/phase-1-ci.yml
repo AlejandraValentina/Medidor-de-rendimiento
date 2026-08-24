@@ -32,6 +32,9 @@ jobs:
       - name: Test local persistence
         run: gradle :data:local:testDebugUnitTest --no-daemon
 
+      - name: Test app state
+        run: gradle :app:testDebugUnitTest --no-daemon
+
       - name: Assemble project
         run: gradle assemble --no-daemon
 

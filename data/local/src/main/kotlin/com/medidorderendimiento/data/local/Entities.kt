@@ -58,6 +58,8 @@ data class FoodProductEntity(
     val carbohydratesMilligrams: Long?,
     val fatMilligrams: Long?,
     val revision: Long,
+    val basisQuantityValue: Long = 100_000,
+    val basisQuantityUnit: String = "MASS_MG",
 )
 
 @Entity(
@@ -84,6 +86,8 @@ data class FoodEntryEntity(
     val quantityNature: String,
     val sourceKind: String,
     val revision: Long,
+    val confirmationStatus: String = "CONFIRMED",
+    val nutrientNature: String = "DECLARED",
 )
 
 enum class DiaryClosureState { OPEN, CLOSED_CONFIRMED, CLOSED_WITH_ESTIMATES, CLOSED_INCOMPLETE, EXCLUDED_CONTEXT, ZERO_INTAKE_CONFIRMED }

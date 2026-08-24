@@ -4,3 +4,5 @@
 local.properties
 *.iml
 gradle/wrapper/gradle-wrapper.jar
+
+.kotlin/

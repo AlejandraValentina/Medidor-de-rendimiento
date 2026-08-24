@@ -10,11 +10,13 @@ import androidx.room.*
     @Insert fun insert(entity: NutritionPlanVersionEntity)
     @Query("SELECT * FROM nutrition_plan_versions WHERE planVersionId = :id") fun get(id: String): NutritionPlanVersionEntity?
     @Query("SELECT * FROM nutrition_plan_versions WHERE profileId = :profileId ORDER BY validFromEpochDay") fun list(profileId: String): List<NutritionPlanVersionEntity>
+    @Query("SELECT * FROM nutrition_plan_versions WHERE profileId = :profileId ORDER BY validFromEpochDay DESC LIMIT 1") fun latest(profileId: String): NutritionPlanVersionEntity?
 }
 @Dao interface WeightMeasurementDao {
     @Insert fun insert(entity: WeightMeasurementEntity)
     @Query("SELECT * FROM weight_measurements WHERE weightId = :id") fun get(id: String): WeightMeasurementEntity?
     @Query("SELECT * FROM weight_measurements WHERE profileId = :profileId ORDER BY recordedAtEpochMillis") fun list(profileId: String): List<WeightMeasurementEntity>
+    @Query("SELECT * FROM weight_measurements WHERE profileId = :profileId ORDER BY recordedAtEpochMillis DESC LIMIT 1") fun latest(profileId: String): WeightMeasurementEntity?
     @Query("DELETE FROM weight_measurements WHERE weightId = :id") fun delete(id: String): Int
 }
 @Dao interface FoodProductDao {

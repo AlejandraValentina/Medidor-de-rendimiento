@@ -1,6 +1,8 @@
 package com.medidorderendimiento.data.local
 
+import android.content.Context
 import androidx.room.Database
+import androidx.room.Room
 import androidx.room.RoomDatabase
 
 @Database(entities = [UserProfileEntity::class, NutritionPlanVersionEntity::class, WeightMeasurementEntity::class,
@@ -13,3 +15,6 @@ abstract class PerformanceDatabase : RoomDatabase() {
     abstract fun foodEntries(): FoodEntryDao
     abstract fun diaryDays(): NutritionDiaryDayDao
 }
+
+fun createPerformanceDatabase(context: Context): PerformanceDatabase =
+    Room.databaseBuilder(context.applicationContext, PerformanceDatabase::class.java, "performance.db").build()

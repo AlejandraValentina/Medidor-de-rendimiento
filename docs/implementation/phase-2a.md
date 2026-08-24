@@ -34,12 +34,28 @@ persisten por nombre y un día sin fila continúa siendo ausencia, no
 `ZERO_INTAKE_CONFIRMED`. Los DAOs son específicos y solo exponen inserción,
 lectura/listado básico y las modificaciones admitidas por la vertical actual.
 
+## Cierre funcional
+
+La actividad principal usa Compose y permite crear versiones de plan, registrar
+peso manual, crear productos con base en 100 g, 100 ml, unidad o porción y
+nutrientes opcionales, registrar la cantidad realmente consumida y seleccionar
+explícitamente el estado del diario.
+El panel obtiene modelos de dominio mediante `Phase2aStore`; la UI no manipula
+entidades Room. Muestra plan base, recomendado, energía declarada o estimada,
+proteína calculable, restante calculable, último peso y ausencia explícita.
+
+`recommendedToday` referencia exactamente `baseDailyEnergy` (BASE_ONLY) para
+todo día. El resumen se calcula bajo demanda desde `food_entries`: pendientes y
+rechazados no se suman, y nutrientes declarados y estimados forman grupos
+mutuamente excluyentes. Un día vacío permanece abierto con ingesta desconocida;
+ningún cierre ni cero se deduce automáticamente.
+
 ## Decisiones postergadas
 
 Se postergan Fase 2b, favoritos, comidas guardadas, fuentes externas, tendencias,
 TDEE, evaluación de planes, readiness, sincronización, red, auditoría avanzada,
-migraciones posteriores y UI funcional. No se añadieron placeholders para esas
-capacidades.
+migraciones posteriores y UI multipantalla/avanzada. No se añadieron
+placeholders para esas capacidades.
 
 ## Verificación
 
@@ -48,13 +64,15 @@ Comandos de certificación:
 ```bash
 gradle :core:domain:test --no-daemon
 gradle :data:local:testDebugUnitTest --no-daemon
+gradle :app:testDebugUnitTest --no-daemon
 gradle assemble --no-daemon
 gradle lint --no-daemon
 ```
 
-La ejecución local conjunta quedó limitada porque este contenedor no tiene
-Android SDK (`SDK location not found`). La certificación final depende del
-resultado real de GitHub Actions; no se declaran verdes anticipadamente los
-tests Room, `assemble` ni `lint`. No hay desviaciones funcionales deliberadas de
-v1.1. La especificación disponible está en la raíz del repositorio, aunque el
-encargo indique una ruta bajo `docs/`.
+Las verificaciones locales se ejecutaron con JDK 17, Gradle 8.14.4 y Android
+SDK 35: dominio, tests Room, tests de estado de `app`, `assemble` y `lint`
+terminaron con `BUILD SUCCESSFUL`. La certificación normativa con Gradle 8.11.1
+continúa dependiendo del resultado real de GitHub Actions; no se declara la fase
+completa anticipadamente. No hay desviaciones funcionales deliberadas de v1.1.
+La especificación disponible está en la raíz del repositorio, aunque el encargo
+indique una ruta bajo `docs/`.

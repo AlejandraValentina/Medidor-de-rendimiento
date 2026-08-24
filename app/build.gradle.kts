@@ -1,6 +1,7 @@
 plugins {
     id("com.android.application")
     kotlin("android")
+    id("org.jetbrains.kotlin.plugin.compose")
 }
 
 android {
@@ -17,6 +18,7 @@ android {
 
     buildFeatures {
         buildConfig = false
+        compose = true
     }
 
     compileOptions {
@@ -32,4 +34,14 @@ android {
 dependencies {
     implementation(project(":core:domain"))
     implementation(project(":data:local"))
+    implementation(platform("androidx.compose:compose-bom:2025.04.01"))
+    implementation("androidx.activity:activity-compose:1.10.1")
+    implementation("androidx.compose.material3:material3")
+    implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.9.0")
+    implementation("androidx.lifecycle:lifecycle-viewmodel-ktx:2.9.0")
+    implementation("androidx.lifecycle:lifecycle-runtime-compose:2.9.0")
+
+    testImplementation(kotlin("test"))
 }
+
+tasks.withType<Test>().configureEach { useJUnitPlatform() }
