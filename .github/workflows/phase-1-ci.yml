@@ -1,0 +1,42 @@
+name: Phase 2a CI
+
+on:
+  pull_request:
+  push:
+
+permissions:
+  contents: read
+
+jobs:
+  certify-phase-2a:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Gradle 8.11.1
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.11.1"
+
+      - name: Test JVM domain
+        run: gradle :core:domain:test --no-daemon
+
+      - name: Test local persistence
+        run: gradle :data:local:testDebugUnitTest --no-daemon
+
+      - name: Test app state
+        run: gradle :app:testDebugUnitTest --no-daemon
+
+      - name: Assemble project
+        run: gradle assemble --no-daemon
+
+      - name: Run Android lint
+        run: gradle lint --no-daemon
