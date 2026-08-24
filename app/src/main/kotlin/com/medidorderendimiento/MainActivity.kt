@@ -104,8 +104,26 @@ private fun Phase2aScreen(viewModel: Phase2aViewModel) {
     Text("Proteína: ${state.summary.protein?.grams() ?: "desconocida"}")
     Text("Restante: ${state.remaining?.kcal() ?: "no calculable"} kcal")
     Text("PESO", style = MaterialTheme.typography.titleMedium)
-    Text(state.latestWeight?.let { "${it.mass.kilogramsForDisplay()} kg" } ?: "Sin pesaje registrado")
+    Text(state.latestWeight?.let { "Último peso observado: ${it.mass.kilogramsForDisplay()} kg" } ?: "Sin pesaje registrado")
+    val trend = state.weightTrend
+    if (trend?.isAvailable == true) {
+        Text("Tendencia modelada: ${trend.estimatedMass?.kilogramsForDisplay()} kg")
+        Text("Ritmo aproximado: ${trend.weeklyRateGrams?.let(::formatWeeklyRate)} kg/semana")
+        Text("Confianza: ${trend.confidence.displayName()} · ${trend.coverage.distinctDays} días de pesaje en ${trend.coverage.spanDays} días")
+        if (trend.possibleOutliers.isNotEmpty()) Text("${trend.possibleOutliers.size} observación posible atípica; el registro original se conserva")
+    } else {
+        Text("Tendencia no disponible: datos insuficientes")
+        trend?.let { Text("Cobertura: ${it.coverage.distinctDays} días de pesaje en ${it.coverage.spanDays} días") }
+    }
     Text("DIARIO — ${state.civilDay?.value ?: "hoy"}: ${state.diaryState}")
+}
+
+private fun formatWeeklyRate(grams: Long): String = java.math.BigDecimal.valueOf(grams, 3).stripTrailingZeros().toPlainString()
+private fun WeightTrendConfidence.displayName(): String = when (this) {
+    WeightTrendConfidence.UNAVAILABLE -> "no disponible"
+    WeightTrendConfidence.LOW -> "baja"
+    WeightTrendConfidence.MODERATE -> "moderada"
+    WeightTrendConfidence.HIGH -> "alta"
 }
 
 @Composable private fun PlanForm(vm: Phase2aViewModel) {
