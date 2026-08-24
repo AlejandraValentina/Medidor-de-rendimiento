@@ -35,6 +35,7 @@ private fun Phase2aScreen(viewModel: Phase2aViewModel) {
         WeightForm(viewModel)
         ProductForm(viewModel)
         ConsumptionForm(state, viewModel)
+        QuickRegistration(state, viewModel)
         Text("DIARIO — ${state.diaryState}", style = MaterialTheme.typography.titleMedium)
         Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             Button(onClick = { viewModel.setDiaryState(DiaryClosureState.OPEN) }) { Text("Abrir") }
@@ -42,6 +43,50 @@ private fun Phase2aScreen(viewModel: Phase2aViewModel) {
         }
         DiaryClosureState.entries.filter { it !in setOf(DiaryClosureState.OPEN, DiaryClosureState.CLOSED_CONFIRMED) }.forEach {
             TextButton(onClick = { viewModel.setDiaryState(it) }) { Text(it.name) }
+        }
+    }
+}
+
+@Composable private fun QuickRegistration(state: Phase2aUiState, vm: Phase2aViewModel) {
+    var amount by remember { mutableStateOf("1") }
+    var mealName by remember { mutableStateOf("") }
+    val mealAmounts = remember { mutableStateMapOf<String, String>() }
+    Text("FAVORITOS", style = MaterialTheme.typography.titleMedium)
+    state.favorites.forEach { favorite ->
+        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            Text(favorite.product.product.name)
+            Button(onClick = { vm.consumeFavorite(favorite) }) { Text("Registrar habitual") }
+            TextButton(onClick = { vm.removeFavorite(favorite.product) }) { Text("Quitar") }
+        }
+    }
+    state.products.forEach { product ->
+        TextButton(onClick = { vm.addFavorite(product, amount.toLongOrNull() ?: 1) }) { Text("Favorito: ${product.product.name}") }
+    }
+    OutlinedTextField(amount, { amount = it }, label = { Text("Cantidad a confirmar") })
+
+    Text("RECIENTES", style = MaterialTheme.typography.titleMedium)
+    state.recentProducts.forEach { product ->
+        TextButton(onClick = { vm.addConsumption(product, amount.toLongOrNull() ?: 1, false, false) }) { Text("Repetir ${product.product.name}") }
+    }
+
+    Text("COMIDAS GUARDADAS", style = MaterialTheme.typography.titleMedium)
+    OutlinedTextField(mealName, { mealName = it }, label = { Text("Nombre") })
+    Button(enabled = mealName.isNotBlank() && state.products.isNotEmpty(), onClick = {
+        vm.saveMeal(mealName, state.products.take(3).map { it to (amount.toLongOrNull() ?: 1) })
+    }) { Text("Guardar con productos visibles") }
+    state.savedMeals.forEach { meal ->
+        Column {
+            Text("${meal.name} (${meal.items.size})")
+            meal.items.forEach { item ->
+                OutlinedTextField(mealAmounts[item.id.value] ?: "", { mealAmounts[item.id.value] = it },
+                    label = { Text("${item.product.product.name}: cantidad (vacío = guardada)") })
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            Button(onClick = { vm.consumeMeal(meal, meal.items.mapNotNull { item ->
+                mealAmounts[item.id.value]?.toLongOrNull()?.let { item.id to it }
+            }.toMap()) }) { Text("Registrar") }
+            TextButton(onClick = { vm.deleteMeal(meal) }) { Text("Eliminar") }
+            }
         }
     }
 }

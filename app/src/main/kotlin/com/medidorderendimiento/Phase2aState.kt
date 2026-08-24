@@ -2,6 +2,7 @@ package com.medidorderendimiento
 
 import com.medidorderendimiento.data.local.DiaryClosureState
 import com.medidorderendimiento.data.local.StoredFoodProduct
+import com.medidorderendimiento.data.local.Phase2aStore
 import com.medidorderendimiento.domain.*
 import java.math.BigDecimal
 import java.math.RoundingMode
@@ -22,6 +23,9 @@ data class Phase2aUiState(
     val products: List<StoredFoodProduct> = emptyList(),
     val entries: List<FoodEntry> = emptyList(),
     val diaryState: DiaryClosureState = DiaryClosureState.OPEN,
+    val favorites: List<Phase2aStore.FavoriteFood> = emptyList(),
+    val recentProducts: List<StoredFoodProduct> = emptyList(),
+    val savedMeals: List<Phase2aStore.SavedMeal> = emptyList(),
 ) {
     val recommendedToday: EnergyAmount? get() = plan?.baseDailyEnergy
     val summary: DailySummary get() = summarize(entries)
