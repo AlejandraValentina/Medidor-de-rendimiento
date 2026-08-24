@@ -15,4 +15,4 @@ dependencyResolutionManagement {
 }
 
 rootProject.name = "MedidorDeRendimiento"
-include(":app", ":core:domain")
+include(":app", ":core:domain", ":data:local")

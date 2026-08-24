@@ -17,6 +17,8 @@ data class NutritionFacts(
 )
 
 enum class QuantityNature { MEASURED, DECLARED, ESTIMATED }
+enum class EntryConfirmation { DRAFT, PENDING, CONFIRMED, REJECTED }
+enum class NutrientNature { DECLARED, ESTIMATED }
 
 data class FoodEntry(
     val id: LocalId,
@@ -28,6 +30,8 @@ data class FoodEntry(
     val civilDay: CivilDay,
     val source: ManualSource = ManualSource.MANUAL,
     val revision: Long = 1,
+    val confirmation: EntryConfirmation = EntryConfirmation.CONFIRMED,
+    val nutrientNature: NutrientNature = NutrientNature.DECLARED,
 ) {
     init { require(revision > 0) { "Revision must be greater than zero" } }
 }
