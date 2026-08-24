@@ -84,3 +84,27 @@ fun StoredDiaryDay.toEntity() = NutritionDiaryDayEntity(profileId.value, civilDa
 fun NutritionDiaryDayEntity.toDomain() = StoredDiaryDay(LocalId(profileId), civilDayEpochDay.toCivilDay(),
     DiaryClosureState.valueOf(closureState), closedAtEpochMillis?.let(Instant::ofEpochMilli),
     Instant.ofEpochMilli(updatedAtEpochMillis), closureRevision, exclusionReason)
+
+fun TdeeEstimate.toEntity(profileId: LocalId, stability: EstimatorStability? = null) = TdeeEstimateEntity(
+    id.value, profileId.value, referenceDay.toEpochDay(), kind.name, centralEnergy?.millicalories,
+    lowEnergy?.millicalories, highEnergy?.millicalories, maturity.name, nutritionQuality.label.name,
+    nutritionQuality.indexPermillion, nutritionQuality.requiredDays, nutritionQuality.candidateDays,
+    nutritionQuality.eligibleDays, nutritionQuality.estimatedEnergyPermillion, nutritionQuality.excludedDays,
+    nutritionQuality.pendingEntries, nutritionQuality.unknownEnergyEntries,
+    nutritionQuality.reasons.joinToString(",") { it.name }, weightConfidence.name,
+    (stability?.status ?: stabilityStatus).name, stability?.madPermillion, stability?.peakToPeakPermillion,
+    stability?.consecutivePeriodDriftPermillion, windowStart.toEpochDay(), windowEnd.toEpochDay(),
+    algorithmVersion, policyVersion, inputRevision, evidenceKey, revision,
+)
+
+fun TdeeEstimateEntity.toDomain() = TdeeEstimate(
+    LocalId(tdeeId), referenceDayEpochDay.toCivilDay(), TdeeEstimateKind.valueOf(estimateKind),
+    centralEnergyMillicalories?.let(EnergyAmount::ofMillicalories), lowEnergyMillicalories?.let(EnergyAmount::ofMillicalories),
+    highEnergyMillicalories?.let(EnergyAmount::ofMillicalories), TdeeMaturity.valueOf(maturity),
+    NutritionQuality(requiredNutritionDays, candidateNutritionDays, eligibleNutritionDays, estimatedEnergyPermillion,
+        excludedNutritionDays, pendingEntries, unknownEnergyEntries, qualityIndexPermillion,
+        DataQualityLabel.valueOf(qualityLabel), qualityReasons.split(',').filter(String::isNotBlank).map(NutritionQualityReason::valueOf).toSet()),
+    WeightTrendConfidence.valueOf(weightConfidence), EstimatorStabilityStatus.valueOf(stabilityStatus),
+    windowStartEpochDay.toCivilDay(), windowEndEpochDay.toCivilDay(), algorithmVersion, policyVersion,
+    inputRevision, evidenceKey, revision,
+)

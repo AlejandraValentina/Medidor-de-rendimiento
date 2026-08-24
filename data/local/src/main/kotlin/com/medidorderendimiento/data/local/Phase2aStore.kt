@@ -59,4 +59,43 @@ class Phase2aStore(private val database: PerformanceDatabase) {
         }, Instant.ofEpochMilli(meal.createdAtEpochMillis), Instant.ofEpochMilli(meal.updatedAtEpochMillis))
     }
     fun deleteMeal(id: LocalId) = database.savedMeals().delete(id.value)
+
+    fun tdeeNutritionDays(profileId: LocalId, start: CivilDay, end: CivilDay): List<TdeeNutritionDay> {
+        val entries = database.foodEntries().listForRange(profileId.value, start.toEpochDay(), end.toEpochDay())
+            .groupBy { it.civilDayEpochDay }
+        val plans = database.nutritionPlans().list(profileId.value)
+        return database.diaryDays().list(profileId.value)
+            .filter { it.civilDayEpochDay in start.toEpochDay()..end.toEpochDay() }
+            .map { diary ->
+                val dayEntries = entries[diary.civilDayEpochDay].orEmpty()
+                    .filter { it.confirmationStatus == EntryConfirmation.CONFIRMED.name }
+                fun energy(nature: NutrientNature): EnergyAmount? {
+                    val matching = dayEntries.filter { it.nutrientNature == nature.name }
+                    if (matching.isEmpty() || matching.any { it.energyMillicalories == null }) return null
+                    return EnergyAmount.ofMillicalories(matching.fold(0L) { sum, entry ->
+                        Math.addExact(sum, requireNotNull(entry.energyMillicalories))
+                    })
+                }
+                val activePlan = plans.lastOrNull { plan -> plan.validFromEpochDay <= diary.civilDayEpochDay &&
+                    (plan.validUntilEpochDay == null || diary.civilDayEpochDay <= plan.validUntilEpochDay) }
+                TdeeNutritionDay(diary.civilDayEpochDay.toCivilDay(), TdeeDiaryState.valueOf(diary.closureState),
+                    energy(NutrientNature.DECLARED), energy(NutrientNature.ESTIMATED),
+                    entries[diary.civilDayEpochDay].orEmpty().count { it.confirmationStatus == EntryConfirmation.PENDING.name },
+                    dayEntries.count { it.energyMillicalories == null }, activePlan?.planVersionId?.let(::LocalId))
+            }
+    }
+
+    fun tdeeHistory(profileId: LocalId): List<TdeeEstimate> = database.tdeeEstimates().currentHistory(profileId.value).map(TdeeEstimateEntity::toDomain)
+
+    fun affectedTdeeEstimates(profileId: LocalId, editedDay: CivilDay): List<TdeeEstimate> =
+        tdeeHistory(profileId).filter { editedDay in it.windowStart..it.windowEnd }
+
+    fun saveTdee(profileId: LocalId, estimate: TdeeEstimate, stability: EstimatorStability): TdeeEstimate {
+        val current = database.tdeeEstimates().latestForDay(profileId.value, estimate.referenceDay.toEpochDay())
+        if (current?.evidenceKey == estimate.evidenceKey && current.inputRevision == estimate.inputRevision) return current.toDomain()
+        val revision = (current?.revision ?: 0) + 1
+        val revised = estimate.copy(revision = revision)
+        database.tdeeEstimates().insert(revised.toEntity(profileId, stability))
+        return revised
+    }
 }

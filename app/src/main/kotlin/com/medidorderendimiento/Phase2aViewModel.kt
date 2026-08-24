@@ -19,6 +19,8 @@ class Phase2aViewModel(
     private val zoneId: ZoneId = ZoneId.systemDefault(),
 ) : ViewModel() {
     private val weightTrendCalculator = WeightTrendCalculator()
+    private val tdeeEstimator = TdeeEstimator()
+    private val stabilityCalculator = EstimatorStabilityCalculator()
     private val profileId = LocalId("local-profile")
     private val _state = MutableStateFlow(Phase2aUiState())
     val state: StateFlow<Phase2aUiState> = _state
@@ -34,11 +36,24 @@ class Phase2aViewModel(
         store.ensureProfile(profileId, clock.now())
         val day = today()
         val weights = store.weights(profileId)
+        val trend = weightTrendCalculator.calculate(weights.map(::WeightObservation), day)
+        val windowStart = CivilDay.parse(day.value.minusDays(27).toString())
+        val nutritionDays = store.tdeeNutritionDays(profileId, windowStart, day)
+        val evidenceKey = nutritionDays.joinToString("|") {
+            "${it.civilDay.value}:${it.state}:${it.actualEnergy?.millicalories}:${it.estimatedEnergy?.millicalories}:${it.pendingEntries}:${it.unknownEnergyEntries}:${it.planVersionId?.value}"
+        } + "|weight:${trend.weeklyRateGrams}:${trend.coverage.distinctDays}:${trend.coverage.spanDays}"
+        val estimate = tdeeEstimator.estimate(LocalId(UUID.randomUUID().toString()), day, windowStart, nutritionDays,
+            trend, 1, evidenceKey)
+        val previous = store.tdeeHistory(profileId)
+        val stability = stabilityCalculator.calculate(previous + estimate)
+        val persistedEstimate = store.saveTdee(profileId, estimate.copy(stabilityStatus = stability.status), stability)
         _state.value = Phase2aUiState(
             civilDay = day,
             plan = store.latestPlan(profileId),
             latestWeight = weights.maxByOrNull(WeightMeasurement::recordedAt),
-            weightTrend = weightTrendCalculator.calculate(weights.map(::WeightObservation), day),
+            weightTrend = trend,
+            tdeeEstimate = persistedEstimate,
+            estimatorStability = stability,
             products = store.products(),
             entries = store.entries(profileId, day),
             diaryState = store.diary(profileId, day)?.state ?: DiaryClosureState.OPEN,
