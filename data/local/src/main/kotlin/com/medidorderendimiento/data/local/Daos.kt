@@ -30,6 +30,8 @@ import androidx.room.*
     @Query("SELECT * FROM food_entries WHERE profileId = :profileId AND civilDayEpochDay = :day ORDER BY recordedAtEpochMillis") fun listForDay(profileId: String, day: Long): List<FoodEntryEntity>
     @Query("SELECT food_products.* FROM food_products INNER JOIN food_entries ON food_products.productId = food_entries.productId WHERE food_entries.profileId = :profileId GROUP BY food_products.productId ORDER BY MAX(food_entries.recordedAtEpochMillis) DESC LIMIT :limit")
     fun recentProducts(profileId: String, limit: Int): List<FoodProductEntity>
+    @Query("SELECT * FROM food_entries WHERE profileId = :profileId AND civilDayEpochDay BETWEEN :startDay AND :endDay ORDER BY civilDayEpochDay, recordedAtEpochMillis")
+    fun listForRange(profileId: String, startDay: Long, endDay: Long): List<FoodEntryEntity>
 }
 @Dao interface NutritionDiaryDayDao {
     @Upsert fun save(entity: NutritionDiaryDayEntity)
@@ -47,4 +49,15 @@ import androidx.room.*
     @Query("SELECT * FROM saved_meals WHERE profileId = :profileId AND archivedAtEpochMillis IS NULL ORDER BY updatedAtEpochMillis DESC") fun list(profileId: String): List<SavedMealEntity>
     @Query("SELECT * FROM saved_meal_items WHERE savedMealId = :mealId ORDER BY ordering") fun items(mealId: String): List<SavedMealItemEntity>
     @Query("DELETE FROM saved_meals WHERE savedMealId = :mealId") fun delete(mealId: String): Int
+}
+@Dao interface TdeeEstimateDao {
+    @Insert fun insert(entity: TdeeEstimateEntity)
+    @Query("SELECT * FROM tdee_estimates WHERE profileId = :profileId ORDER BY referenceDayEpochDay, revision")
+    fun history(profileId: String): List<TdeeEstimateEntity>
+    @Query("SELECT t.* FROM tdee_estimates t INNER JOIN (SELECT referenceDayEpochDay, MAX(revision) AS latestRevision FROM tdee_estimates WHERE profileId = :profileId GROUP BY referenceDayEpochDay) latest ON t.referenceDayEpochDay = latest.referenceDayEpochDay AND t.revision = latest.latestRevision WHERE t.profileId = :profileId ORDER BY t.referenceDayEpochDay")
+    fun currentHistory(profileId: String): List<TdeeEstimateEntity>
+    @Query("SELECT * FROM tdee_estimates WHERE profileId = :profileId ORDER BY referenceDayEpochDay DESC, revision DESC LIMIT 1")
+    fun latest(profileId: String): TdeeEstimateEntity?
+    @Query("SELECT * FROM tdee_estimates WHERE profileId = :profileId AND referenceDayEpochDay = :day ORDER BY revision DESC LIMIT 1")
+    fun latestForDay(profileId: String, day: Long): TdeeEstimateEntity?
 }

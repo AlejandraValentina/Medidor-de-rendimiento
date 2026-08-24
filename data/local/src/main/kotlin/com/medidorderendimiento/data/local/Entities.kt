@@ -127,3 +127,41 @@ data class SavedMealEntity(@PrimaryKey val savedMealId: String, val profileId: S
 ], indices = [Index("productId"), Index(value = ["savedMealId", "ordering"], unique = true)])
 data class SavedMealItemEntity(@PrimaryKey val savedMealItemId: String, val savedMealId: String, val productId: String,
     val quantityValue: Long, val quantityUnit: String, val ordering: Int)
+
+@Entity(tableName = "tdee_estimates", foreignKeys = [
+    ForeignKey(entity = UserProfileEntity::class, parentColumns = ["profileId"], childColumns = ["profileId"], onDelete = ForeignKey.CASCADE),
+], indices = [Index("profileId", "referenceDayEpochDay"),
+    Index(value = ["profileId", "referenceDayEpochDay", "revision"], unique = true)])
+data class TdeeEstimateEntity(
+    @PrimaryKey val tdeeId: String,
+    val profileId: String,
+    val referenceDayEpochDay: Long,
+    val estimateKind: String,
+    val centralEnergyMillicalories: Long?,
+    val lowEnergyMillicalories: Long?,
+    val highEnergyMillicalories: Long?,
+    val maturity: String,
+    val qualityLabel: String,
+    val qualityIndexPermillion: Int,
+    val requiredNutritionDays: Int,
+    val candidateNutritionDays: Int,
+    val eligibleNutritionDays: Int,
+    val estimatedEnergyPermillion: Int,
+    val excludedNutritionDays: Int,
+    val pendingEntries: Int,
+    val unknownEnergyEntries: Int,
+    val qualityReasons: String,
+    val weightConfidence: String,
+    val stabilityStatus: String,
+    val relativeMadPermillion: Int?,
+    val peakToPeakPermillion: Int?,
+    val periodDriftPermillion: Int?,
+    val windowStartEpochDay: Long,
+    val windowEndEpochDay: Long,
+    val algorithmVersion: String,
+    val policyVersion: String,
+    val inputRevision: Long,
+    val evidenceKey: String,
+    val estimationReasons: String,
+    val revision: Long,
+)

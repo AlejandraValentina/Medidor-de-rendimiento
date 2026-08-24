@@ -21,6 +21,8 @@ data class Phase2aUiState(
     val plan: NutritionPlanVersion? = null,
     val latestWeight: WeightMeasurement? = null,
     val weightTrend: WeightTrend? = null,
+    val tdeeEstimate: TdeeEstimate? = null,
+    val estimatorStability: EstimatorStability? = null,
     val products: List<StoredFoodProduct> = emptyList(),
     val entries: List<FoodEntry> = emptyList(),
     val diaryState: DiaryClosureState = DiaryClosureState.OPEN,

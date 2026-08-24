@@ -115,10 +115,31 @@ private fun Phase2aScreen(viewModel: Phase2aViewModel) {
         Text("Tendencia no disponible: datos insuficientes")
         trend?.let { Text("Cobertura: ${it.coverage.distinctDays} días de pesaje en ${it.coverage.spanDays} días") }
     }
+    Text("TDEE", style = MaterialTheme.typography.titleMedium)
+    val tdee = state.tdeeEstimate
+    Text(tdee?.centralEnergy?.let { "Estimación observacional: ${it.kcal()} kcal/día" } ?: "No disponible")
+    Text("Madurez: ${tdee?.maturity?.name ?: TdeeMaturity.UNAVAILABLE.name}")
+    tdee?.nutritionQuality?.let {
+        Text("Calidad de datos: ${it.label.displayName()}")
+        Text("Evidencia: ${it.eligibleDays} / ${it.requiredDays} días elegibles · ${formatPermillion(it.estimatedEnergyPermillion)} de energía estimada")
+    }
+    state.estimatorStability?.let {
+        Text("Estabilidad: ${it.status.name}")
+        Text("Historial: ${it.distinctEstimateDays} fechas en ${it.horizonDays} días")
+    }
+    tdee?.let { Text("Ventana: ${it.windowStart.value} — ${it.windowEnd.value}") }
     Text("DIARIO — ${state.civilDay?.value ?: "hoy"}: ${state.diaryState}")
 }
 
 private fun formatWeeklyRate(grams: Long): String = java.math.BigDecimal.valueOf(grams, 3).stripTrailingZeros().toPlainString()
+private fun formatPermillion(value: Int): String = java.math.BigDecimal.valueOf(value.toLong())
+    .divide(java.math.BigDecimal.valueOf(10_000), 0, java.math.RoundingMode.HALF_UP).toPlainString() + " %"
+private fun DataQualityLabel.displayName(): String = when (this) {
+    DataQualityLabel.INSUFFICIENT -> "INSUFICIENTE"
+    DataQualityLabel.LOW -> "BAJA"
+    DataQualityLabel.MODERATE -> "MODERADA"
+    DataQualityLabel.HIGH -> "ALTA"
+}
 private fun WeightTrendConfidence.displayName(): String = when (this) {
     WeightTrendConfidence.UNAVAILABLE -> "no disponible"
     WeightTrendConfidence.LOW -> "baja"

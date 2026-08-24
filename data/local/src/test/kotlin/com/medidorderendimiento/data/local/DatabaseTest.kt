@@ -97,4 +97,59 @@ class DatabaseTest {
         database.savedMeals().delete("meal")
         assertNotNull(database.foodEntries().get("history"))
     }
+
+    @Test fun `tdee history preserves canonical integers and current revision per civil day`() {
+        fun estimate(id: String, revision: Long, energy: Long) = TdeeEstimate(LocalId(id), CivilDay.parse("2026-08-24"),
+            TdeeEstimateKind.OBSERVATIONAL, EnergyAmount.ofMillicalories(energy), maturity = TdeeMaturity.ADAPTIVE,
+            nutritionQuality = NutritionQuality(10, 12, 10, 100_000, 1, 0, 0, 800_000, DataQualityLabel.HIGH, emptySet()),
+            weightConfidence = WeightTrendConfidence.HIGH, windowStart = CivilDay.parse("2026-08-01"),
+            windowEnd = CivilDay.parse("2026-08-24"), algorithmVersion = "algorithm-v1", policyVersion = "tdee-v1",
+            inputRevision = revision, evidenceKey = "e-$revision", revision = revision)
+        database.tdeeEstimates().insert(estimate("one", 1, 2_400_000).toEntity(LocalId("profile")))
+        database.tdeeEstimates().insert(estimate("two", 2, 2_410_000).copy(
+            estimationReasons = setOf(TdeeEstimationReason.NON_POSITIVE_OBSERVATIONAL_RESULT)).toEntity(LocalId("profile")))
+        assertEquals(2, database.tdeeEstimates().history("profile").size)
+        val current = database.tdeeEstimates().currentHistory("profile").single().toDomain()
+        assertEquals(2_410_000, current.centralEnergy?.millicalories)
+        assertEquals(2, current.revision)
+        assertNull(current.lowEnergy)
+        assertNull(current.highEnergy)
+        assertEquals(setOf(TdeeEstimationReason.NON_POSITIVE_OBSERVATIONAL_RESULT), current.estimationReasons)
+    }
+
+
+    @Test fun `retrospective correction prepares next revision before stability calculation`() {
+        fun estimate(day: Int, energy: Long, revision: Long = 1, evidence: String = "e-$day") = TdeeEstimate(
+            LocalId("t-$day-$revision"), CivilDay.parse("2026-08-${day.toString().padStart(2, '0')}"),
+            TdeeEstimateKind.OBSERVATIONAL, EnergyAmount.ofKilocalories(energy), maturity = TdeeMaturity.ADAPTIVE,
+            nutritionQuality = NutritionQuality(10, 10, 10, 0, 0, 0, 0, 1_000_000, DataQualityLabel.HIGH, emptySet()),
+            weightConfidence = WeightTrendConfidence.HIGH, windowStart = CivilDay.parse("2026-07-01"),
+            windowEnd = CivilDay.parse("2026-08-${day.toString().padStart(2, '0')}"), algorithmVersion = "a",
+            policyVersion = "p", inputRevision = revision, evidenceKey = evidence, revision = revision)
+        val store = Phase2aStore(database)
+        (1..19 step 2).forEach { day -> database.tdeeEstimates().insert(estimate(day, 2_400).toEntity(LocalId("profile"))) }
+        assertEquals(EstimatorStabilityStatus.STABLE, EstimatorStabilityCalculator().calculate(store.tdeeHistory(LocalId("profile"))).status)
+        val corrected = estimate(19, 2_700, revision = 2, evidence = "corrected")
+        val prepared = store.prepareTdee(LocalId("profile"), corrected)
+        assertEquals(2, prepared.estimate.revision)
+        assertEquals(10, prepared.currentHistory.size)
+        assertEquals(2_700_000, prepared.currentHistory.single { it.referenceDay == corrected.referenceDay }.centralEnergy?.millicalories)
+        val stability = EstimatorStabilityCalculator().calculate(prepared.currentHistory)
+        store.saveTdee(LocalId("profile"), prepared, stability)
+        assertEquals(2, database.tdeeEstimates().latestForDay("profile", corrected.referenceDay.value.toEpochDay())?.revision)
+        assertEquals(10, stability.distinctEstimateDays)
+        assertEquals(EstimatorStabilityStatus.UNSTABLE, stability.status)
+    }
+
+    @Test fun `retrospective day identifies only estimates whose windows are affected`() {
+        fun entity(id: String, reference: String, start: String) = TdeeEstimate(LocalId(id), CivilDay.parse(reference),
+            TdeeEstimateKind.OBSERVATIONAL, EnergyAmount.ofKilocalories(2_400), maturity = TdeeMaturity.ADAPTIVE,
+            nutritionQuality = NutritionQuality(10, 10, 10, 0, 0, 0, 0, 1_000_000, DataQualityLabel.HIGH, emptySet()),
+            weightConfidence = WeightTrendConfidence.HIGH, windowStart = CivilDay.parse(start), windowEnd = CivilDay.parse(reference),
+            algorithmVersion = "a", policyVersion = "p", inputRevision = 1, evidenceKey = id).toEntity(LocalId("profile"))
+        database.tdeeEstimates().insert(entity("affected", "2026-08-24", "2026-08-01"))
+        database.tdeeEstimates().insert(entity("unaffected", "2026-09-24", "2026-09-01"))
+        val store = Phase2aStore(database)
+        assertEquals(listOf("affected"), store.affectedTdeeEstimates(LocalId("profile"), CivilDay.parse("2026-08-10")).map { it.id.value })
+    }
 }
