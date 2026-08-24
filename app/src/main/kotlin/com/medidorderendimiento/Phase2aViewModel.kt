@@ -33,7 +33,8 @@ class Phase2aViewModel(
         store.ensureProfile(profileId, clock.now())
         val day = today()
         _state.value = Phase2aUiState(day, store.latestPlan(profileId), store.latestWeight(profileId), store.products(),
-            store.entries(profileId, day), store.diary(profileId, day)?.state ?: DiaryClosureState.OPEN)
+            store.entries(profileId, day), store.diary(profileId, day)?.state ?: DiaryClosureState.OPEN,
+            store.favorites(profileId), store.recentProducts(profileId), store.savedMeals(profileId))
     }
 
     fun addPlan(goal: NutritionGoal, energyKcal: Long, proteinGrams: Long?, rateGrams: Long?) = viewModelScope.launch(Dispatchers.IO) {
@@ -79,6 +80,36 @@ class Phase2aViewModel(
         val now = clock.now()
         store.saveDiary(StoredDiaryDay(profileId, today(), value, if (value == DiaryClosureState.OPEN) null else now,
             now, 1, null)); refresh()
+    }
+
+    fun addFavorite(product: StoredFoodProduct, amount: Long) = viewModelScope.launch(Dispatchers.IO) {
+        store.saveFavorite(profileId, LocalId(UUID.randomUUID().toString()), product, quantityFor(product, amount), clock.now()); refresh()
+    }
+    fun removeFavorite(product: StoredFoodProduct) = viewModelScope.launch(Dispatchers.IO) {
+        store.removeFavorite(profileId, product.product.id); refresh()
+    }
+    fun consumeFavorite(favorite: Phase2aStore.FavoriteFood) = viewModelScope.launch(Dispatchers.IO) {
+        addEntry(favorite.product, favorite.preferredQuantity); refresh()
+    }
+    fun saveMeal(name: String, selections: List<Pair<StoredFoodProduct, Long>>) = viewModelScope.launch(Dispatchers.IO) {
+        store.saveMeal(profileId, LocalId(UUID.randomUUID().toString()), name,
+            selections.map { (product, amount) -> product to quantityFor(product, amount) }, clock.now()); refresh()
+    }
+    fun consumeMeal(meal: Phase2aStore.SavedMeal, amounts: Map<LocalId, Long> = emptyMap()) = viewModelScope.launch(Dispatchers.IO) {
+        meal.items.forEach { item -> addEntry(item.product, amounts[item.id]?.let { quantityFor(item.product, it) } ?: item.quantity) }
+        refresh()
+    }
+    fun deleteMeal(meal: Phase2aStore.SavedMeal) = viewModelScope.launch(Dispatchers.IO) { store.deleteMeal(meal.id); refresh() }
+
+    private fun quantityFor(product: StoredFoodProduct, amount: Long): Quantity = when (product.basisQuantity) {
+        is Quantity.Mass -> Quantity.Mass.ofGrams(amount)
+        is Quantity.Volume -> Quantity.Volume.ofMilliliters(amount)
+        is Quantity.Units -> Quantity.Units.ofWholeUnits(amount)
+        is Quantity.Portions -> Quantity.Portions.ofWholePortions(amount)
+    }
+    private fun addEntry(product: StoredFoodProduct, quantity: Quantity) {
+        store.addEntry(profileId, FoodEntry(LocalId(UUID.randomUUID().toString()), product.product, quantity,
+            scaleNutrition(product.nutrition, product.basisQuantity, quantity), QuantityNature.DECLARED, clock.now(), today()))
     }
 
     class Factory(private val store: Phase2aStore, private val clock: ClockProvider) : ViewModelProvider.Factory {

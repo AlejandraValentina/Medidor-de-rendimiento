@@ -107,3 +107,23 @@ data class NutritionDiaryDayEntity(
     val closureRevision: Long,
     val exclusionReason: String?,
 )
+
+@Entity(tableName = "favorite_foods", foreignKeys = [
+    ForeignKey(entity = UserProfileEntity::class, parentColumns = ["profileId"], childColumns = ["profileId"], onDelete = ForeignKey.CASCADE),
+    ForeignKey(entity = FoodProductEntity::class, parentColumns = ["productId"], childColumns = ["productId"]),
+], indices = [Index("profileId"), Index("productId"), Index(value = ["profileId", "productId"], unique = true)])
+data class FavoriteFoodEntity(@PrimaryKey val favoriteId: String, val profileId: String, val productId: String,
+    val preferredQuantityValue: Long, val preferredQuantityUnit: String, val lastUsedAtEpochMillis: Long)
+
+@Entity(tableName = "saved_meals", foreignKeys = [
+    ForeignKey(entity = UserProfileEntity::class, parentColumns = ["profileId"], childColumns = ["profileId"], onDelete = ForeignKey.CASCADE),
+], indices = [Index("profileId", "updatedAtEpochMillis")])
+data class SavedMealEntity(@PrimaryKey val savedMealId: String, val profileId: String, val name: String,
+    val createdAtEpochMillis: Long, val updatedAtEpochMillis: Long, val archivedAtEpochMillis: Long?)
+
+@Entity(tableName = "saved_meal_items", foreignKeys = [
+    ForeignKey(entity = SavedMealEntity::class, parentColumns = ["savedMealId"], childColumns = ["savedMealId"], onDelete = ForeignKey.CASCADE),
+    ForeignKey(entity = FoodProductEntity::class, parentColumns = ["productId"], childColumns = ["productId"]),
+], indices = [Index("productId"), Index(value = ["savedMealId", "ordering"], unique = true)])
+data class SavedMealItemEntity(@PrimaryKey val savedMealItemId: String, val savedMealId: String, val productId: String,
+    val quantityValue: Long, val quantityUnit: String, val ordering: Int)

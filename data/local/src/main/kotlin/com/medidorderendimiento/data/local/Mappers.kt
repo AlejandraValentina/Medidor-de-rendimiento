@@ -53,13 +53,13 @@ fun FoodProductEntity.toDomain() = StoredFoodProduct(
         carbohydratesMilligrams?.let(NutrientAmount::ofMilligrams), fatMilligrams?.let(NutrientAmount::ofMilligrams),
     ), storedQuantity(basisQuantityValue, basisQuantityUnit),
 )
-private fun Quantity.stored(): Pair<Long, String> = when (this) {
+internal fun Quantity.stored(): Pair<Long, String> = when (this) {
     is Quantity.Mass -> milligrams to "MASS_MG"
     is Quantity.Volume -> microliters to "VOLUME_UL"
     is Quantity.Units -> thousandths to "UNITS_THOUSANDTHS"
     is Quantity.Portions -> thousandths to "PORTIONS_THOUSANDTHS"
 }
-private fun storedQuantity(value: Long, unit: String): Quantity = when (unit) {
+internal fun storedQuantity(value: Long, unit: String): Quantity = when (unit) {
     "MASS_MG" -> Quantity.Mass.ofMilligrams(value)
     "VOLUME_UL" -> Quantity.Volume.ofMicroliters(value)
     "UNITS_THOUSANDTHS" -> Quantity.Units.ofThousandths(value)
