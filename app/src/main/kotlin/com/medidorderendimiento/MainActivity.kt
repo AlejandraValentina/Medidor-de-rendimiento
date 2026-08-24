@@ -92,6 +92,8 @@ private fun Phase2aScreen(viewModel: Phase2aViewModel) {
 }
 
 @Composable private fun Panel(state: Phase2aUiState) {
+    Text("EVALUACIÓN EN VALIDACIÓN", style = MaterialTheme.typography.titleMedium)
+    Text("Modo SHADOW · sin cambios automáticos del plan")
     val plan = state.plan
     Text("PLAN", style = MaterialTheme.typography.titleMedium)
     Text(if (plan == null) "Sin plan registrado" else "${plan.goal}: ${plan.baseDailyEnergy.kcal()} kcal · proteína ${plan.proteinTarget?.grams() ?: "desconocida"}")

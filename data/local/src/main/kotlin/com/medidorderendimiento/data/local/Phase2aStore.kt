@@ -116,7 +116,9 @@ class Phase2aStore(private val database: PerformanceDatabase) {
         if (current?.evidenceKey == evaluation.evidenceKey && current.inputRevision == evaluation.inputRevision) return
         database.runInTransaction {
             database.planEvaluations().insert(evaluation.copy(revision = (current?.revision ?: 0) + 1).toEntity())
-            memory?.let { database.decisionStateMemory().save(it.toEntity()) }
+            val rebuilt = DecisionStateMemoryRebuilder.rebuild(
+                database.planEvaluations().currentHistory(evaluation.profileId.value).map(PlanEvaluationEntity::toDomain))
+            (rebuilt ?: memory)?.let { database.decisionStateMemory().save(it.toEntity()) }
         }
     }
     fun rebuildDecisionMemory(profileId: LocalId): DecisionStateMemory? {

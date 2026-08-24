@@ -158,9 +158,22 @@ class DatabaseTest {
             TargetWeeklyRate.ofGrams(350), CivilDay.parse("2026-07-01"), acceptance = PlanAcceptance(Instant.EPOCH))
         database.nutritionPlans().insert(plan.toEntity(LocalId("profile")))
         val day = CivilDay.parse("2026-08-20")
-        fun evaluation(id: String, revision: Long, effective: PlanDecision) = PlanEvaluation(LocalId(id), LocalId("profile"), day,
-            LocalId("plan"), PlanDecision.ADJUST_DOWN, effective, PlanDecision.OBSERVE, DecisionAuthorization.OBSERVE_ONLY,
-            SafetyStatus.CAUTION, setOf(PlanEvaluationReason.SAFETY_CAUTION), null, -80, "policy", "e-$revision", revision, revision)
+        fun evaluation(id: String, revision: Long, effective: PlanDecision, evaluationDay: CivilDay = day,
+            candidate: PlanDecision = PlanDecision.ADJUST_DOWN, qualified: Boolean = false) = PlanEvaluation(
+            id = LocalId(id), profileId = LocalId("profile"), referenceDay = evaluationDay, planVersionId = LocalId("plan"),
+            evaluationMode = EvaluationMode.SHADOW, candidateDecision = candidate,
+            effectiveDecision = effective, operationalDecision = null, operational = false,
+            authorization = DecisionAuthorization.OBSERVE_ONLY, safetyStatus = SafetyStatus.CAUTION,
+            qualifiedForHysteresis = qualified, reasons = setOf(PlanEvaluationReason.SHADOW_NON_OPERATIONAL),
+            windowStart = CivilDay.parse("2026-08-01"), windowEnd = evaluationDay, tdeeEstimateId = null,
+            tdeeReferenceDay = evaluationDay, tdeeRevision = null,
+            observedWeeklyRateGrams = -80, weightConfidence = WeightTrendConfidence.HIGH,
+            weightDistinctDays = 10, weightSpanDays = 20, weightMaximumGapDays = 3,
+            tdeeMaturity = TdeeMaturity.ADAPTIVE, estimatorStabilityStatus = EstimatorStabilityStatus.STABLE,
+            nutritionQualityLabel = DataQualityLabel.HIGH, eligibleNutritionDays = 20, requiredNutritionDays = 14,
+            estimatedEnergyPermillion = 0, evaluatorPolicyVersion = PlanEvaluatorPolicy().version, evidenceKey = id,
+            inputRevision = revision, revision = revision,
+        )
         database.planEvaluations().insert(evaluation("one",1,PlanDecision.OBSERVE).toEntity())
         database.planEvaluations().insert(evaluation("two",2,PlanDecision.MAINTAIN).toEntity())
         assertEquals(PlanDecision.MAINTAIN, database.planEvaluations().currentHistory("profile").single().toDomain().effectiveDecision)
@@ -168,5 +181,16 @@ class DatabaseTest {
             1, day, PlanDecision.MAINTAIN, 2)
         database.decisionStateMemory().save(memory.toEntity())
         assertEquals(memory, database.decisionStateMemory().get("plan")?.toDomain())
+
+        val store = Phase2aStore(database)
+        val firstDay = CivilDay.parse("2026-08-21")
+        val secondDay = CivilDay.parse("2026-08-23")
+        store.saveEvaluation(evaluation("qualified-1", 1, PlanDecision.OBSERVE, firstDay, qualified = true), null)
+        store.saveEvaluation(evaluation("qualified-2", 1, PlanDecision.ADJUST_DOWN, secondDay, qualified = true), null)
+        assertEquals(2, store.evaluationMemory(LocalId("plan"))?.qualifiedConfirmationCount)
+        store.saveEvaluation(evaluation("corrected-1", 1, PlanDecision.MAINTAIN, firstDay,
+            candidate = PlanDecision.MAINTAIN, qualified = false), null)
+        assertEquals(1, store.evaluationMemory(LocalId("plan"))?.qualifiedConfirmationCount)
+        assertEquals(2, store.currentEvaluations(LocalId("profile")).count { it.referenceDay in listOf(firstDay, secondDay) })
     }
 }

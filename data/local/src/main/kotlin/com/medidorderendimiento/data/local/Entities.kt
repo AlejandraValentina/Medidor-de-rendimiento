@@ -172,9 +172,14 @@ data class TdeeEstimateEntity(
 ], indices = [Index("profileId", "referenceDayEpochDay"), Index("planVersionId", "referenceDayEpochDay"),
     Index(value = ["profileId", "referenceDayEpochDay", "revision"], unique = true)])
 data class PlanEvaluationEntity(@PrimaryKey val evaluationId: String, val profileId: String, val referenceDayEpochDay: Long,
-    val planVersionId: String?, val candidateDecision: String, val effectiveDecision: String, val operationalDecision: String,
-    val authorization: String, val safetyStatus: String, val reasonCodes: String, val tdeeEstimateId: String?,
-    val observedWeeklyRateGrams: Long?, val evaluatorPolicyVersion: String, val evidenceKey: String,
+    val planVersionId: String?, val evaluationMode: String, val candidateDecision: String, val effectiveDecision: String,
+    val operationalDecision: String?, val operational: Boolean, val authorization: String, val safetyStatus: String,
+    val qualifiedForHysteresis: Boolean, val reasonCodes: String, val windowStartEpochDay: Long?, val windowEndEpochDay: Long?,
+    val tdeeEstimateId: String?, val tdeeReferenceDayEpochDay: Long?, val tdeeRevision: Long?,
+    val observedWeeklyRateGrams: Long?, val weightConfidence: String,
+    val weightDistinctDays: Int, val weightSpanDays: Long, val weightMaximumGapDays: Long, val tdeeMaturity: String?,
+    val estimatorStabilityStatus: String, val nutritionQualityLabel: String?, val eligibleNutritionDays: Int?,
+    val requiredNutritionDays: Int?, val estimatedEnergyPermillion: Int?, val evaluatorPolicyVersion: String, val evidenceKey: String,
     val inputRevision: Long, val revision: Long)
 
 @Entity(tableName = "decision_state_memory", foreignKeys = [
