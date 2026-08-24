@@ -18,6 +18,7 @@ class Phase2aViewModel(
     private val clock: ClockProvider,
     private val zoneId: ZoneId = ZoneId.systemDefault(),
 ) : ViewModel() {
+    private val weightTrendCalculator = WeightTrendCalculator()
     private val profileId = LocalId("local-profile")
     private val _state = MutableStateFlow(Phase2aUiState())
     val state: StateFlow<Phase2aUiState> = _state
@@ -32,9 +33,19 @@ class Phase2aViewModel(
     fun refresh() = viewModelScope.launch(Dispatchers.IO) {
         store.ensureProfile(profileId, clock.now())
         val day = today()
-        _state.value = Phase2aUiState(day, store.latestPlan(profileId), store.latestWeight(profileId), store.products(),
-            store.entries(profileId, day), store.diary(profileId, day)?.state ?: DiaryClosureState.OPEN,
-            store.favorites(profileId), store.recentProducts(profileId), store.savedMeals(profileId))
+        val weights = store.weights(profileId)
+        _state.value = Phase2aUiState(
+            civilDay = day,
+            plan = store.latestPlan(profileId),
+            latestWeight = weights.maxByOrNull(WeightMeasurement::recordedAt),
+            weightTrend = weightTrendCalculator.calculate(weights.map(::WeightObservation), day),
+            products = store.products(),
+            entries = store.entries(profileId, day),
+            diaryState = store.diary(profileId, day)?.state ?: DiaryClosureState.OPEN,
+            favorites = store.favorites(profileId),
+            recentProducts = store.recentProducts(profileId),
+            savedMeals = store.savedMeals(profileId),
+        )
     }
 
     fun addPlan(goal: NutritionGoal, energyKcal: Long, proteinGrams: Long?, rateGrams: Long?) = viewModelScope.launch(Dispatchers.IO) {

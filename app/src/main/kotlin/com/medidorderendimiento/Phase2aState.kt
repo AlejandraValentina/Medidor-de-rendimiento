@@ -20,6 +20,7 @@ data class Phase2aUiState(
     val civilDay: CivilDay? = null,
     val plan: NutritionPlanVersion? = null,
     val latestWeight: WeightMeasurement? = null,
+    val weightTrend: WeightTrend? = null,
     val products: List<StoredFoodProduct> = emptyList(),
     val entries: List<FoodEntry> = emptyList(),
     val diaryState: DiaryClosureState = DiaryClosureState.OPEN,
