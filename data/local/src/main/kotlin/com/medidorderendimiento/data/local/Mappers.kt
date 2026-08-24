@@ -110,3 +110,19 @@ fun TdeeEstimateEntity.toDomain() = TdeeEstimate(
     inputRevision, evidenceKey,
     estimationReasons.split(',').filter(String::isNotBlank).map(TdeeEstimationReason::valueOf).toSet(), revision,
 )
+
+fun PlanEvaluation.toEntity() = PlanEvaluationEntity(id.value, profileId.value, referenceDay.toEpochDay(), planVersionId?.value,
+    candidateDecision.name, effectiveDecision.name, operationalDecision.name, authorization.name, safetyStatus.name,
+    reasons.joinToString(",") { it.name }, tdeeEstimateId?.value, observedWeeklyRateGrams, evaluatorPolicyVersion,
+    evidenceKey, inputRevision, revision)
+fun PlanEvaluationEntity.toDomain() = PlanEvaluation(LocalId(evaluationId), LocalId(profileId), referenceDayEpochDay.toCivilDay(),
+    planVersionId?.let(::LocalId), PlanDecision.valueOf(candidateDecision), PlanDecision.valueOf(effectiveDecision),
+    PlanDecision.valueOf(operationalDecision), DecisionAuthorization.valueOf(authorization), SafetyStatus.valueOf(safetyStatus),
+    reasonCodes.split(',').filter(String::isNotBlank).map(PlanEvaluationReason::valueOf).toSet(), tdeeEstimateId?.let(::LocalId),
+    observedWeeklyRateGrams, evaluatorPolicyVersion, evidenceKey, inputRevision, revision)
+fun DecisionStateMemory.toEntity() = DecisionStateMemoryEntity(planVersionId.value, profileId.value, policyVersion,
+    lastProcessedDay.toEpochDay(), lastEvidenceKey, directionalCandidate?.name, qualifiedConfirmationCount,
+    firstQualifiedDay?.toEpochDay(), lastEffectiveDecision.name, revision)
+fun DecisionStateMemoryEntity.toDomain() = DecisionStateMemory(LocalId(profileId), LocalId(planVersionId), policyVersion,
+    lastProcessedDayEpochDay.toCivilDay(), lastEvidenceKey, directionalCandidate?.let(PlanDecision::valueOf),
+    qualifiedConfirmationCount, firstQualifiedDayEpochDay?.toCivilDay(), PlanDecision.valueOf(lastEffectiveDecision), revision)

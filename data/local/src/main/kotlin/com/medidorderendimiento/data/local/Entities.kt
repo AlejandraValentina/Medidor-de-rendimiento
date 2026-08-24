@@ -165,3 +165,22 @@ data class TdeeEstimateEntity(
     val estimationReasons: String,
     val revision: Long,
 )
+
+@Entity(tableName = "plan_evaluations", foreignKeys = [
+    ForeignKey(entity = UserProfileEntity::class, parentColumns = ["profileId"], childColumns = ["profileId"], onDelete = ForeignKey.CASCADE),
+    ForeignKey(entity = NutritionPlanVersionEntity::class, parentColumns = ["planVersionId"], childColumns = ["planVersionId"]),
+], indices = [Index("profileId", "referenceDayEpochDay"), Index("planVersionId", "referenceDayEpochDay"),
+    Index(value = ["profileId", "referenceDayEpochDay", "revision"], unique = true)])
+data class PlanEvaluationEntity(@PrimaryKey val evaluationId: String, val profileId: String, val referenceDayEpochDay: Long,
+    val planVersionId: String?, val candidateDecision: String, val effectiveDecision: String, val operationalDecision: String,
+    val authorization: String, val safetyStatus: String, val reasonCodes: String, val tdeeEstimateId: String?,
+    val observedWeeklyRateGrams: Long?, val evaluatorPolicyVersion: String, val evidenceKey: String,
+    val inputRevision: Long, val revision: Long)
+
+@Entity(tableName = "decision_state_memory", foreignKeys = [
+    ForeignKey(entity = UserProfileEntity::class, parentColumns = ["profileId"], childColumns = ["profileId"], onDelete = ForeignKey.CASCADE),
+    ForeignKey(entity = NutritionPlanVersionEntity::class, parentColumns = ["planVersionId"], childColumns = ["planVersionId"], onDelete = ForeignKey.CASCADE),
+], indices = [Index("profileId", "lastProcessedDayEpochDay")])
+data class DecisionStateMemoryEntity(@PrimaryKey val planVersionId: String, val profileId: String, val policyVersion: String,
+    val lastProcessedDayEpochDay: Long, val lastEvidenceKey: String, val directionalCandidate: String?,
+    val qualifiedConfirmationCount: Int, val firstQualifiedDayEpochDay: Long?, val lastEffectiveDecision: String, val revision: Long)

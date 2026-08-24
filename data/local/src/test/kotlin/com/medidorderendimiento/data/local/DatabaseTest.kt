@@ -152,4 +152,21 @@ class DatabaseTest {
         val store = Phase2aStore(database)
         assertEquals(listOf("affected"), store.affectedTdeeEstimates(LocalId("profile"), CivilDay.parse("2026-08-10")).map { it.id.value })
     }
+
+    @Test fun `plan evaluation and decision memory round trip preserve layered decisions and latest revision`() {
+        val plan = NutritionPlanVersion(LocalId("plan"), NutritionGoal.LOSS, EnergyAmount.ofKilocalories(2_000), null,
+            TargetWeeklyRate.ofGrams(350), CivilDay.parse("2026-07-01"), acceptance = PlanAcceptance(Instant.EPOCH))
+        database.nutritionPlans().insert(plan.toEntity(LocalId("profile")))
+        val day = CivilDay.parse("2026-08-20")
+        fun evaluation(id: String, revision: Long, effective: PlanDecision) = PlanEvaluation(LocalId(id), LocalId("profile"), day,
+            LocalId("plan"), PlanDecision.ADJUST_DOWN, effective, PlanDecision.OBSERVE, DecisionAuthorization.OBSERVE_ONLY,
+            SafetyStatus.CAUTION, setOf(PlanEvaluationReason.SAFETY_CAUTION), null, -80, "policy", "e-$revision", revision, revision)
+        database.planEvaluations().insert(evaluation("one",1,PlanDecision.OBSERVE).toEntity())
+        database.planEvaluations().insert(evaluation("two",2,PlanDecision.MAINTAIN).toEntity())
+        assertEquals(PlanDecision.MAINTAIN, database.planEvaluations().currentHistory("profile").single().toDomain().effectiveDecision)
+        val memory = DecisionStateMemory(LocalId("profile"), LocalId("plan"), "policy", day, "e-2", PlanDecision.ADJUST_DOWN,
+            1, day, PlanDecision.MAINTAIN, 2)
+        database.decisionStateMemory().save(memory.toEntity())
+        assertEquals(memory, database.decisionStateMemory().get("plan")?.toDomain())
+    }
 }
