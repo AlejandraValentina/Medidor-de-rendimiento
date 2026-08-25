@@ -1,0 +1,224 @@
+package com.medidorderendimiento
+
+import android.os.Bundle
+import androidx.activity.ComponentActivity
+import androidx.activity.compose.setContent
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.viewmodel.compose.viewModel
+import com.medidorderendimiento.data.local.*
+import com.medidorderendimiento.domain.*
+import java.time.Instant
+
+class MainActivity : ComponentActivity() {
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        val database = createPerformanceDatabase(applicationContext)
+        val factory = Phase2aViewModel.Factory(Phase2aStore(database)) { Instant.now() }
+        setContent { MaterialTheme { Phase2aScreen(viewModel(factory = factory)) } }
+    }
+}
+
+@Composable
+private fun Phase2aScreen(viewModel: Phase2aViewModel) {
+    val state by viewModel.state.collectAsStateWithLifecycle()
+    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Text("Medidor de rendimiento", style = MaterialTheme.typography.headlineSmall)
+        Panel(state)
+        ShadowValidationInspector(state, viewModel)
+        PlanForm(viewModel)
+        WeightForm(viewModel)
+        ProductForm(viewModel)
+        ConsumptionForm(state, viewModel)
+        QuickRegistration(state, viewModel)
+        Text("DIARIO — ${state.diaryState}", style = MaterialTheme.typography.titleMedium)
+        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            Button(onClick = { viewModel.setDiaryState(DiaryClosureState.OPEN) }) { Text("Abrir") }
+            Button(onClick = { viewModel.setDiaryState(DiaryClosureState.CLOSED_CONFIRMED) }) { Text("Cerrar") }
+        }
+        DiaryClosureState.entries.filter { it !in setOf(DiaryClosureState.OPEN, DiaryClosureState.CLOSED_CONFIRMED) }.forEach {
+            TextButton(onClick = { viewModel.setDiaryState(it) }) { Text(it.name) }
+        }
+    }
+}
+
+@Composable private fun ShadowValidationInspector(state: Phase2aUiState, vm: Phase2aViewModel) {
+    Text("VALIDACIÓN SHADOW", style = MaterialTheme.typography.titleMedium)
+    Text("EVALUACIÓN EN VALIDACIÓN · ADVISORY desactivado")
+    Text("Safety explícito (sin valor predeterminado)")
+    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        SafetyStatus.entries.forEach { status ->
+            FilterChip(selected = state.selectedSafetyStatus == status, onClick = { vm.selectShadowSafety(status) },
+                label = { Text(status.name) })
+        }
+    }
+    Button(enabled = canEvaluateShadow(state.selectedSafetyStatus), onClick = vm::evaluateShadowToday) {
+        Text("Evaluar hoy en SHADOW")
+    }
+    val report = state.shadowValidationReport
+    Text("Estado tooling: ${report?.status ?: ShadowValidationStatus.INSUFFICIENT_EVIDENCE}")
+    report?.let {
+        Text("Policies: validation=${it.policyVersion}; evaluator=${it.evaluatorPolicyVersions}; stability=${it.stabilityPolicyVersions}; TDEE=${it.tdeePolicyVersions}")
+        Text("Días evaluables: ${it.evaluableDays}/28 · prospectivos: ${it.prospectiveDays}/14")
+        Text("Peso: ${it.weightDistinctDays}/8 días · span ${it.weightSpanDays} · gap máximo ${it.weightMaximumGapDays}")
+        Text("Nutrición elegible: ${it.eligibleNutritionDays}/${it.totalWindowDays} · ${it.nutritionCoveragePermillion} ppm")
+        Text("Energía estimada: ${it.estimatedEnergyPermillion ?: 0} ppm · TDEE estable: ${it.stableTdeeDates}/7")
+        Text("Candidatos hipotéticos: ↑ ${it.adjustUpCandidates} · ↓ ${it.adjustDownCandidates}; alternancias ${it.alternations}")
+        it.criteria.forEach { criterion -> Text("${criterion.criterion}: ${criterion.state} — ${criterion.evidence.joinToString()}") }
+    }
+    state.shadowEvaluations.filter { it.candidateDecision in setOf(PlanDecision.ADJUST_UP, PlanDecision.ADJUST_DOWN) }
+        .forEach { evaluation ->
+            Text("HIPOTÉTICO — NO OPERATIVO · ${evaluation.referenceDay.value} · ${evaluation.candidateDecision}")
+            Text("Plan ${evaluation.planVersionId?.value}; observado ${evaluation.observedWeeklyRateGrams} g/sem; objetivo ${state.plan?.targetWeeklyRate?.grams} g/sem; efectivo ${evaluation.effectiveDecision}")
+            Text("Safety ${evaluation.safetyStatus}; peso ${evaluation.weightConfidence}; nutrición ${evaluation.nutritionQualityLabel}; TDEE ${evaluation.tdeeMaturity}; estabilidad ${evaluation.estimatorStabilityStatus}")
+            Text("Evidencia ${evaluation.evidenceKey}; revisión ${evaluation.revision}; razones ${evaluation.reasons.joinToString()}")
+        }
+}
+
+@Composable private fun QuickRegistration(state: Phase2aUiState, vm: Phase2aViewModel) {
+    var amount by remember { mutableStateOf("1") }
+    var mealName by remember { mutableStateOf("") }
+    val mealAmounts = remember { mutableStateMapOf<String, String>() }
+    Text("FAVORITOS", style = MaterialTheme.typography.titleMedium)
+    state.favorites.forEach { favorite ->
+        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            Text(favorite.product.product.name)
+            Button(onClick = { vm.consumeFavorite(favorite) }) { Text("Registrar habitual") }
+            TextButton(onClick = { vm.removeFavorite(favorite.product) }) { Text("Quitar") }
+        }
+    }
+    state.products.forEach { product ->
+        TextButton(onClick = { vm.addFavorite(product, amount.toLongOrNull() ?: 1) }) { Text("Favorito: ${product.product.name}") }
+    }
+    OutlinedTextField(amount, { amount = it }, label = { Text("Cantidad a confirmar") })
+
+    Text("RECIENTES", style = MaterialTheme.typography.titleMedium)
+    state.recentProducts.forEach { product ->
+        TextButton(onClick = { vm.addConsumption(product, amount.toLongOrNull() ?: 1, false, false) }) { Text("Repetir ${product.product.name}") }
+    }
+
+    Text("COMIDAS GUARDADAS", style = MaterialTheme.typography.titleMedium)
+    OutlinedTextField(mealName, { mealName = it }, label = { Text("Nombre") })
+    Button(enabled = mealName.isNotBlank() && state.products.isNotEmpty(), onClick = {
+        vm.saveMeal(mealName, state.products.take(3).map { it to (amount.toLongOrNull() ?: 1) })
+    }) { Text("Guardar con productos visibles") }
+    state.savedMeals.forEach { meal ->
+        Column {
+            Text("${meal.name} (${meal.items.size})")
+            meal.items.forEach { item ->
+                OutlinedTextField(mealAmounts[item.id.value] ?: "", { mealAmounts[item.id.value] = it },
+                    label = { Text("${item.product.product.name}: cantidad (vacío = guardada)") })
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            Button(onClick = { vm.consumeMeal(meal, meal.items.mapNotNull { item ->
+                mealAmounts[item.id.value]?.toLongOrNull()?.let { item.id to it }
+            }.toMap()) }) { Text("Registrar") }
+            TextButton(onClick = { vm.deleteMeal(meal) }) { Text("Eliminar") }
+            }
+        }
+    }
+}
+
+@Composable private fun Panel(state: Phase2aUiState) {
+    Text("EVALUACIÓN EN VALIDACIÓN", style = MaterialTheme.typography.titleMedium)
+    Text("Modo SHADOW · sin cambios automáticos del plan")
+    val plan = state.plan
+    Text("PLAN", style = MaterialTheme.typography.titleMedium)
+    Text(if (plan == null) "Sin plan registrado" else "${plan.goal}: ${plan.baseDailyEnergy.kcal()} kcal · proteína ${plan.proteinTarget?.grams() ?: "desconocida"}")
+    Text("HOY", style = MaterialTheme.typography.titleMedium)
+    Text("Plan base: ${plan?.baseDailyEnergy?.kcal() ?: "desconocido"} kcal")
+    Text("Recomendado hoy: ${state.recommendedToday?.kcal() ?: "desconocido"} kcal")
+    Text("Consumido confirmado: ${state.summary.confirmedEnergy?.kcal() ?: "desconocido"} kcal")
+    Text("Consumido estimado: ${state.summary.estimatedEnergy?.kcal() ?: "desconocido"} kcal")
+    Text("Pendiente: ${state.summary.pendingEnergy?.kcal() ?: "desconocido"} kcal")
+    Text("Proteína: ${state.summary.protein?.grams() ?: "desconocida"}")
+    Text("Restante: ${state.remaining?.kcal() ?: "no calculable"} kcal")
+    Text("PESO", style = MaterialTheme.typography.titleMedium)
+    Text(state.latestWeight?.let { "Último peso observado: ${it.mass.kilogramsForDisplay()} kg" } ?: "Sin pesaje registrado")
+    val trend = state.weightTrend
+    if (trend?.isAvailable == true) {
+        Text("Tendencia modelada: ${trend.estimatedMass?.kilogramsForDisplay()} kg")
+        Text("Ritmo aproximado: ${trend.weeklyRateGrams?.let(::formatWeeklyRate)} kg/semana")
+        Text("Confianza: ${trend.confidence.displayName()} · ${trend.coverage.distinctDays} días de pesaje en ${trend.coverage.spanDays} días")
+        if (trend.possibleOutliers.isNotEmpty()) Text("${trend.possibleOutliers.size} observación posible atípica; el registro original se conserva")
+    } else {
+        Text("Tendencia no disponible: datos insuficientes")
+        trend?.let { Text("Cobertura: ${it.coverage.distinctDays} días de pesaje en ${it.coverage.spanDays} días") }
+    }
+    Text("TDEE", style = MaterialTheme.typography.titleMedium)
+    val tdee = state.tdeeEstimate
+    Text(tdee?.centralEnergy?.let { "Estimación observacional: ${it.kcal()} kcal/día" } ?: "No disponible")
+    Text("Madurez: ${tdee?.maturity?.name ?: TdeeMaturity.UNAVAILABLE.name}")
+    tdee?.nutritionQuality?.let {
+        Text("Calidad de datos: ${it.label.displayName()}")
+        Text("Evidencia: ${it.eligibleDays} / ${it.requiredDays} días elegibles · ${formatPermillion(it.estimatedEnergyPermillion)} de energía estimada")
+    }
+    state.estimatorStability?.let {
+        Text("Estabilidad: ${it.status.name}")
+        Text("Historial: ${it.distinctEstimateDays} fechas en ${it.horizonDays} días")
+    }
+    tdee?.let { Text("Ventana: ${it.windowStart.value} — ${it.windowEnd.value}") }
+    Text("DIARIO — ${state.civilDay?.value ?: "hoy"}: ${state.diaryState}")
+}
+
+private fun formatWeeklyRate(grams: Long): String = java.math.BigDecimal.valueOf(grams, 3).stripTrailingZeros().toPlainString()
+private fun formatPermillion(value: Int): String = java.math.BigDecimal.valueOf(value.toLong())
+    .divide(java.math.BigDecimal.valueOf(10_000), 0, java.math.RoundingMode.HALF_UP).toPlainString() + " %"
+private fun DataQualityLabel.displayName(): String = when (this) {
+    DataQualityLabel.INSUFFICIENT -> "INSUFICIENTE"
+    DataQualityLabel.LOW -> "BAJA"
+    DataQualityLabel.MODERATE -> "MODERADA"
+    DataQualityLabel.HIGH -> "ALTA"
+}
+private fun WeightTrendConfidence.displayName(): String = when (this) {
+    WeightTrendConfidence.UNAVAILABLE -> "no disponible"
+    WeightTrendConfidence.LOW -> "baja"
+    WeightTrendConfidence.MODERATE -> "moderada"
+    WeightTrendConfidence.HIGH -> "alta"
+}
+
+@Composable private fun PlanForm(vm: Phase2aViewModel) {
+    var energy by remember { mutableStateOf("") }; var protein by remember { mutableStateOf("") }; var rate by remember { mutableStateOf("") }; var goal by remember { mutableStateOf(NutritionGoal.MAINTENANCE) }
+    Text("Nuevo plan", style = MaterialTheme.typography.titleMedium)
+    OutlinedTextField(energy, { energy = it }, label = { Text("Energía kcal") })
+    OutlinedTextField(protein, { protein = it }, label = { Text("Proteína g (opcional)") })
+    if (goal == NutritionGoal.LOSS || goal == NutritionGoal.GAIN) OutlinedTextField(rate, { rate = it }, label = { Text("Ritmo semanal g (opcional)") })
+    TextButton(onClick = { goal = NutritionGoal.entries[(goal.ordinal + 1) % NutritionGoal.entries.size] }) { Text("Objetivo: $goal") }
+    Button(onClick = { energy.toLongOrNull()?.let { vm.addPlan(goal, it, protein.toLongOrNull(), rate.toLongOrNull()) } }) { Text("Crear versión") }
+}
+
+@Composable private fun WeightForm(vm: Phase2aViewModel) {
+    var value by remember { mutableStateOf("") }; Text("Registrar peso", style = MaterialTheme.typography.titleMedium)
+    OutlinedTextField(value, { value = it }, label = { Text("kg") }); Button(onClick = { vm.addWeight(value) }) { Text("Guardar peso") }
+}
+
+@Composable private fun ProductForm(vm: Phase2aViewModel) {
+    var name by remember { mutableStateOf("") }; var energy by remember { mutableStateOf("") }; var protein by remember { mutableStateOf("") }; var carbs by remember { mutableStateOf("") }; var fat by remember { mutableStateOf("") }; var unit by remember { mutableStateOf(FoodUnit.GRAMS) }
+    Text("Producto manual", style = MaterialTheme.typography.titleMedium)
+    TextButton(onClick = { unit = FoodUnit.entries[(unit.ordinal + 1) % FoodUnit.entries.size] }) { Text("Base: $unit") }
+    OutlinedTextField(name, { name = it }, label = { Text("Nombre") }); OutlinedTextField(energy, { energy = it }, label = { Text("kcal (vacío = desconocido)") })
+    OutlinedTextField(protein, { protein = it }, label = { Text("proteína g (opcional)") })
+    OutlinedTextField(carbs, { carbs = it }, label = { Text("carbohidratos g (opcional)") })
+    OutlinedTextField(fat, { fat = it }, label = { Text("grasa g (opcional)") })
+    Button(onClick = { if (name.isNotBlank()) vm.addProduct(name, unit, energy.toLongOrNull(), protein.toLongOrNull(), carbs.toLongOrNull(), fat.toLongOrNull()) }) { Text("Crear producto") }
+}
+
+@Composable private fun ConsumptionForm(state: Phase2aUiState, vm: Phase2aViewModel) {
+    var amount by remember { mutableStateOf("") }; var estimated by remember { mutableStateOf(false) }; var pending by remember { mutableStateOf(false) }; var selected by remember { mutableIntStateOf(0) }
+    val product = state.products.getOrNull(selected.coerceAtMost((state.products.size - 1).coerceAtLeast(0)))
+    Text("Registrar consumo", style = MaterialTheme.typography.titleMedium)
+    TextButton(enabled = state.products.isNotEmpty(), onClick = { selected = (selected + 1) % state.products.size }) { Text(product?.product?.name ?: "Primero crea un producto") }
+    OutlinedTextField(amount, { amount = it }, label = { Text("Cantidad consumida en la unidad de la base") })
+    Row { Checkbox(estimated, { estimated = it }); Text("Nutrientes estimados") }
+    Row { Checkbox(pending, { pending = it }); Text("Registro pendiente") }
+    Button(enabled = product != null, onClick = { amount.toLongOrNull()?.let { value -> product?.let { vm.addConsumption(it, value, estimated, pending) } } }) { Text("Registrar consumo") }
+}
+
+private fun EnergyAmount.kcal(): String = (millicalories.toBigDecimal() / 1_000.toBigDecimal()).stripTrailingZeros().toPlainString()
+private fun NutrientAmount.grams(): String = "${(milligrams.toBigDecimal() / 1_000.toBigDecimal()).stripTrailingZeros().toPlainString()} g"

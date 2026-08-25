@@ -1,0 +1,1369 @@
+# FASE 3.5 — SHADOW VALIDATION TOOLING + VALIDACIÓN PERSONAL
+
+Repositorio:
+
+AlejandraValentina/Medidor-de-rendimiento
+
+==================================================
+0. FUENTE NORMATIVA
+==================================================
+
+La fuente normativa exclusiva es:
+
+Medidor_de_rendimiento_Especificacion_v1.1.md
+
+ubicada en la raíz del repositorio.
+
+Lee específicamente:
+
+- FR-029;
+- FR-034;
+- FR-035;
+- FR-036;
+- FR-043;
+- sección 15.7.4 SH-01–SH-12;
+- sección 17.5 Fase 3.5.
+
+Si este encargo contradice v1.1, prevalece v1.1.
+
+No modifiques la especificación.
+
+==================================================
+1. PRECONDICIÓN GIT
+==================================================
+
+La Fase 3c ya está certificada y fusionada.
+
+Commit funcional certificado de Fase 3c:
+
+c9b96f887c1b92ecd808c2575d85c1675ae4c8fe
+
+El repositorio puede contener después de ese commit únicamente archivos de transporte de prompts, por ejemplo:
+
+- continuacion_prompt_fase_3_5.txt
+- codex-prompts/*
+
+Eso NO invalida la base funcional.
+
+Antes de modificar código:
+
+1. `git fetch origin main --prune`;
+2. confirma que `c9b96f887c1b92ecd808c2575d85c1675ae4c8fe` es ancestro de `origin/main`;
+3. compara `c9b96f887c1b92ecd808c2575d85c1675ae4c8fe..origin/main`;
+4. confirma que cualquier delta posterior al commit certificado consiste únicamente en archivos de transporte/documentación de prompt y NO modifica código, schema, build, tests o comportamiento;
+5. confirma que `origin/main` contiene:
+   - PlanEvaluator;
+   - DecisionStateMemory;
+   - lastProcessedDay;
+   - firstQualifiedDay;
+   - lastQualifiedDay;
+   - EvaluationMode;
+   - SHADOW no operativo;
+   - cooldown 14 días;
+   - entry ±200 g/sem;
+   - exit ±100 g/sem;
+   - Room v4;
+   - plan_evaluations;
+   - decision_state_memory;
+   - MIGRATION_3_4;
+   - banner EVALUACIÓN EN VALIDACIÓN;
+   - BASE_ONLY.
+
+Crear rama LOCAL:
+
+phase-3-5-shadow-validation
+
+desde el `origin/main` actual verificado.
+
+No uses como base un checkout local viejo.
+
+Si detectas cualquier cambio funcional posterior a `c9b96f...` que no sea parte de una fase previamente certificada o de transporte de prompts:
+
+NO implementes.
+
+Estado:
+
+PHASE_3_5_BLOCKED
+
+==================================================
+2. ACLARACIÓN CRÍTICA DE ESTA FASE
+==================================================
+
+Fase 3.5 tiene dos partes distintas:
+
+A. TOOLING DE VALIDACIÓN
+Se implementa ahora con código y tests.
+
+B. VALIDACIÓN PERSONAL REAL
+Requiere datos personales obtenidos a lo largo del tiempo.
+
+NO confundir ambas.
+
+Un test verde NO demuestra que la validación personal fue aprobada.
+
+Fixtures sintéticos NO sustituyen:
+
+- 28 días personales evaluables;
+- al menos 14 días de operación prospectiva;
+- observaciones personales reales;
+- revisión humana.
+
+Por tanto:
+
+NO usar:
+
+PHASE_3_5_COMPLETE
+ADVISORY_READY
+SHADOW_VALIDATED
+
+solo porque el software compile y los fixtures pasen.
+
+El resultado técnico de este encargo será como máximo:
+
+PHASE_3_5_TOOLING_READY
+
+La aprobación real de salida se hará posteriormente con datos personales.
+
+==================================================
+3. OBJETIVO
+==================================================
+
+Implementar exclusivamente las herramientas necesarias para:
+
+- ejecutar evaluaciones SHADOW reales prospectivas;
+- inspeccionar evaluaciones guardadas;
+- medir los diez criterios formales de salida de Fase 3.5;
+- reproducir determinísticamente escenarios;
+- detectar inconsistencias, alternancias y revisiones;
+- mostrar progreso de validación;
+- mantener ADVISORY completamente desactivado.
+
+No implementar todavía:
+
+- AdjustmentProposal;
+- tamaño de ajuste;
+- aceptación/rechazo;
+- aplicación de cambios;
+- transición efectiva a ADVISORY.
+
+==================================================
+4. ARQUITECTURA
+==================================================
+
+Mantener exclusivamente los módulos existentes:
+
+:app
+:core:domain
+:data:local
+
+No crear módulos nuevos.
+
+Preferencia fuerte:
+
+Room debe permanecer en versión 4.
+
+No crear tablas nuevas.
+
+Fase 3.5 debe reutilizar:
+
+plan_evaluations
+decision_state_memory
+tdee_estimates
+weight_measurements
+nutrition_diary_days
+food_entries
+nutrition_plan_versions
+
+La especificación materializa 3c–3.5 usando las mismas tablas de evaluación y
+memoria.
+
+Si detectas que un requisito de replay EXACTO es imposible únicamente por falta
+de una pieza concreta de información persistida:
+
+NO inventes datos.
+
+NO hagas una migración especulativa.
+
+Reporta exactamente el gap como bloqueo antes de aumentar schema.
+
+==================================================
+5. COMPONENTES NUEVOS DE DOMINIO
+==================================================
+
+Implementar en core:domain una solución mínima equivalente a:
+
+ShadowValidationAnalyzer
+ShadowValidationReport
+ShadowValidationPolicy
+ShadowValidationCriterion
+ShadowValidationCriterionResult
+ShadowValidationStatus
+
+Los nombres pueden variar si existe una nomenclatura mejor.
+
+Todo debe ser Kotlin/JVM puro.
+
+Sin Android.
+Sin Room.
+Sin red.
+
+==================================================
+6. ESTADOS DE VALIDACIÓN
+==================================================
+
+NO producir un score 0–100.
+
+Usar estados categóricos claros.
+
+Por ejemplo:
+
+INSUFFICIENT_EVIDENCE
+IN_PROGRESS
+READY_FOR_HUMAN_REVIEW
+BLOCKED_BY_INCONSISTENCY
+
+Para cada criterio individual usar algo equivalente a:
+
+MET
+NOT_MET
+PENDING
+HUMAN_REVIEW_REQUIRED
+
+No usar porcentajes de “probabilidad de estar validado”.
+
+==================================================
+7. SHADOW VALIDATION POLICY
+==================================================
+
+Crear política versionada únicamente para constantes normativas de Fase 3.5.
+
+Defaults:
+
+targetEvaluableDays = 28
+minimumProspectiveDays = 14
+minimumWeightDays = 8
+minimumEligibleNutritionPermillion = 850000
+minimumStableTdeeDates = 7
+
+No duplicar:
+
+- thresholds de histéresis;
+- stability-v1;
+- TdeePolicy;
+- PlanEvaluatorPolicy.
+
+Reutilizar esas policies existentes.
+
+No inventar un nuevo límite de proporción estimada si ya existe uno aplicable.
+
+Si la política existente no contiene un límite cuantitativo explícito para un
+criterio de Fase 3.5:
+
+mostrar evidencia y marcar:
+
+HUMAN_REVIEW_REQUIRED
+
+en vez de crear un magic number.
+
+==================================================
+8. CRITERIO 1 — VENTANA PERSONAL
+==================================================
+
+Criterio normativo:
+
+28 días personales realmente evaluables,
+con al menos 14 días de operación prospectiva.
+
+Para esta primera implementación conservadora:
+
+- contar únicamente fechas civiles distintas;
+- usar solamente revisión vigente de cada fecha;
+- usar únicamente la versión actual del plan;
+- no cruzar cambios de plan;
+- no contar recalculaciones como días nuevos;
+- no contar mismo evidenceKey dos veces;
+- no contar fixtures sintéticos;
+- no contar replay sintético como operación prospectiva.
+
+Una evaluación con:
+
+candidateDecision == INSUFFICIENT_DATA
+
+NO cuenta como día realmente evaluable.
+
+No fabricar historia prospectiva.
+
+Si existen 27 días:
+
+criterio NO cumplido.
+
+==================================================
+9. OPERACIÓN PROSPECTIVA REAL
+==================================================
+
+Actualmente el evaluador existe, pero la validación necesita generar
+plan_evaluations reales.
+
+Implementar un flujo explícito de validación:
+
+Evaluar hoy en SHADOW
+
+o equivalente.
+
+NO ejecutar automáticamente PlanEvaluator suponiendo:
+
+SafetyStatus.CLEAR
+
+si no existe una fuente explícita para safety.
+
+Como todavía no existe readiness de Fase 4:
+
+añadir en el inspector de validación un selector explícito de SafetyStatus:
+
+CLEAR
+CAUTION
+REVIEW_REQUIRED
+
+Sin valor predeterminado.
+
+El usuario debe seleccionar conscientemente el estado antes de ejecutar una
+evaluación SHADOW.
+
+Esto es una herramienta de validación de Fase 3.5, no el readiness final.
+
+No crear score.
+
+No inferir CLEAR de ausencia de datos.
+
+==================================================
+10. EJECUCIÓN SHADOW DEL DÍA
+==================================================
+
+Al ejecutar una evaluación prospectiva:
+
+1. tomar NutritionPlanVersion vigente;
+2. tomar WeightTrend correspondiente al día;
+3. tomar TdeeEstimate vigente;
+4. tomar EstimatorStability vigente;
+5. usar SafetyStatus elegido explícitamente;
+6. obtener DecisionStateMemory vigente;
+7. ejecutar PlanEvaluator en EvaluationMode.SHADOW;
+8. persistir PlanEvaluation;
+9. reconstruir/persistir memoria mediante las reglas existentes.
+
+Debe conservar:
+
+operational = false
+operationalDecision = null
+
+y nunca crear AdjustmentProposal.
+
+La ejecución debe ser idempotente respecto de:
+
+referenceDay
+evidenceKey
+inputRevision
+
+Si nada cambió:
+
+no crear revisión artificial.
+
+Si cambia evidencia material:
+
+crear revisión del mismo referenceDay,
+no un día nuevo.
+
+==================================================
+11. INPUT REVISION
+==================================================
+
+No hardcodear:
+
+inputRevision = 1
+
+para todas las evaluaciones reales.
+
+Derivar proporcionalmente la revisión de los inputs realmente utilizados.
+
+Puede basarse en:
+
+- revisión TDEE;
+- inputRevision TDEE;
+- revisiones de peso relevantes;
+- revisión de diario/entradas relevantes;
+- versión del plan.
+
+No usar:
+
+- timestamp;
+- UUID aleatorio;
+- contador de ejecuciones;
+
+como sustituto semántico de revisión.
+
+El evidenceKey continúa siendo la identidad determinista primaria de evidencia.
+
+==================================================
+12. CRITERIO 2 — PESO Y NUTRICIÓN
+==================================================
+
+Medir:
+
+- días distintos de pesaje;
+- span temporal;
+- maximum gap si está disponible;
+- cobertura nutricional elegible.
+
+Requisito cuantitativo mínimo:
+
+weightDistinctDays >= 8
+
+nutritionEligibleCoverage >= 0.85
+
+Usar enteros escalados:
+
+850000 ppm
+
+No Double/Float canónicos.
+
+“Distribuidos” no tiene en v1.1 un maximumGap universal adicional.
+
+Por tanto:
+
+- mostrar span;
+- mostrar maximumGap;
+- no inventar un threshold nuevo;
+- si la distribución es dudosa, marcar revisión humana.
+
+==================================================
+13. COBERTURA NUTRICIONAL
+==================================================
+
+Calcular cobertura sobre días civiles reales de la ventana evaluada.
+
+Elegible significa lo ya definido por TdeePolicy/NutritionQuality.
+
+No considerar:
+
+OPEN
+CLOSED_INCOMPLETE
+EXCLUDED_CONTEXT
+
+como día nutricional elegible.
+
+No convertir días ausentes en cero.
+
+ZERO_INTAKE_CONFIRMED mantiene su semántica especial ya implementada.
+
+Mostrar:
+
+eligibleDays
+candidateDays si corresponde
+totalWindowDays
+coveragePermillion
+estimatedEnergyPermillion
+quality label
+
+==================================================
+14. CRITERIO 3 — ENERGÍA ESTIMADA
+==================================================
+
+La especificación exige que la proporción energética estimada permanezca dentro
+de la política vigente para el tipo de decisión.
+
+NO inventar un nuevo porcentaje máximo.
+
+Inspeccionar TdeePolicy y NutritionQuality existentes.
+
+Si la policy ya expresa el límite:
+
+aplicarlo.
+
+Si solamente expresa penalización/calidad y no un hard limit independiente:
+
+mostrar:
+
+estimatedEnergyPermillion
+DataQualityLabel
+quality reasons
+
+y marcar este criterio:
+
+HUMAN_REVIEW_REQUIRED
+
+hasta que la política normativa defina una frontera inequívoca.
+
+==================================================
+15. CRITERIO 4 — TDEE STABLE
+==================================================
+
+Requisito:
+
+TDEE STABLE en al menos 7 fechas evaluadas distintas.
+
+Contar:
+
+última revisión vigente de cada referenceDay.
+
+No contar varias ejecuciones del mismo día.
+
+Además revisar:
+
+- EstimatorStabilityStatus;
+- relative MAD;
+- peak-to-peak;
+- period drift;
+- razones de estabilidad;
+- versión de stability policy.
+
+No inventar thresholds:
+usar stability-v1.
+
+Si existen >=7 fechas STABLE pero aparece una oscilación crítica o deriva
+persistente según stability-v1:
+
+criterio NO cumplido.
+
+==================================================
+16. CRITERIO 5 — CANDIDATOS DIRECCIONALES
+==================================================
+
+Durante SHADOW no existen propuestas reales.
+
+Para el criterio normativo de seguridad:
+
+considerar como elementos a inspeccionar cada evaluación con:
+
+candidateDecision == ADJUST_UP
+candidateDecision == ADJUST_DOWN
+
+Listar para cada una:
+
+- fecha;
+- plan;
+- observado semanal;
+- objetivo;
+- candidateDecision;
+- effectiveDecision;
+- safety;
+- weight confidence;
+- nutrition quality;
+- TDEE maturity;
+- stability;
+- reasons;
+- evidenceKey/revision.
+
+NO presentar esto como recomendación al usuario.
+
+Etiquetar claramente:
+
+HIPOTÉTICO / SHADOW
+
+Este criterio requiere revisión humana.
+
+El software puede detectar violaciones obvias,
+pero no autoaprobar “ningún candidato manifiestamente inseguro”.
+
+==================================================
+17. CRITERIO 6 — ALTERNANCIA DIRECCIONAL
+==================================================
+
+Analizar cronológicamente las revisiones vigentes.
+
+Detectar transiciones:
+
+ADJUST_UP → ADJUST_DOWN
+ADJUST_DOWN → ADJUST_UP
+
+No considerar cambio injustificado si existe evidencia explícita coherente como:
+
+- cruce de banda;
+- salida de histéresis;
+- PLAN_CHANGED;
+- POLICY_CHANGED;
+- safety gate;
+- TDEE pasó a UNSTABLE;
+- corrección retrospectiva;
+- nueva evidencia que explica el cambio.
+
+Si aparecen alternancias sin una razón estructurada defendible:
+
+BLOCKED_BY_INCONSISTENCY.
+
+No utilizar simplemente el número de alternancias como score.
+
+==================================================
+18. CRITERIO 7 — CONSISTENCIA
+==================================================
+
+Verificar invariantes entre:
+
+candidateDecision
+effectiveDecision
+operationalDecision
+authorization
+safetyStatus
+qualifiedForHysteresis
+quality
+stability
+reasons
+evaluationMode
+
+Ejemplos:
+
+SHADOW:
+operational == false
+operationalDecision == null
+
+REVIEW_REQUIRED:
+no puede quedar una acción operativa.
+
+EstimatorStability != STABLE:
+no puede calificar direccionalmente para efectos operativos.
+
+INSUFFICIENT_DATA:
+debe tener razón estructurada consistente.
+
+Plan cambiado:
+no reutiliza memoria anterior.
+
+Una inconsistencia real:
+
+BLOCKED_BY_INCONSISTENCY.
+
+==================================================
+19. REPLAY DETERMINISTA
+==================================================
+
+Implementar un replay local mínimo y puro.
+
+Objetivo:
+
+dado el mismo conjunto de inputs,
+policy versions
+y revisiones,
+
+obtener exactamente la misma secuencia de decisiones y memoria.
+
+Preferir algo equivalente a:
+
+ShadowReplayEngine
+
+en core:domain.
+
+Debe:
+
+- procesar cronológicamente;
+- respetar revisiones;
+- usar solo última revisión por fecha;
+- no persistir automáticamente resultados;
+- no contaminar métricas prospectivas;
+- no alterar plan real;
+- no alterar decision_state_memory productiva.
+
+El replay sintético es una herramienta de validación.
+
+No es evidencia personal prospectiva.
+
+==================================================
+20. REPLAY DE EVALUACIONES REALES
+==================================================
+
+Inspecciona si la observabilidad persistida en Fase 3c permite reconstruir
+exactamente los inputs que PlanEvaluator realmente consume.
+
+Usar:
+
+PlanEvaluation
+NutritionPlanVersion
+TdeeEstimate referenciado
+WeightTrend summary persistido
+SafetyStatus
+policy versions
+inputRevision
+
+No inventar campos ausentes.
+
+El replay debe comparar como mínimo:
+
+candidateDecision
+effectiveDecision
+authorization
+qualifiedForHysteresis
+reasons relevantes
+DecisionStateMemory resultante
+
+Si la misma evidencia produce resultado diferente:
+
+criterio de determinismo FALLA.
+
+Si falta un input imprescindible para replay exacto:
+
+PHASE_3_5_BLOCKED
+
+y reportar exactamente cuál.
+
+No aproximar silenciosamente.
+
+==================================================
+21. CRITERIO 8 — REPRODUCIBILIDAD
+==================================================
+
+Considerar cumplido técnicamente cuando:
+
+- los casos inspeccionados se reproducen determinísticamente;
+- policy version coincide;
+- inputRevision coincide;
+- evidenceKey coincide;
+- latest revision por fecha coincide;
+- DecisionStateMemory reconstruida coincide.
+
+Ejecutar el replay dos veces en distinto orden de entrada bruto.
+
+Después del ordenamiento/revisión:
+
+el resultado debe ser idéntico.
+
+==================================================
+22. CRITERIO 9 — ESCENARIOS OBLIGATORIOS
+==================================================
+
+Validar explícitamente mediante datos reales o replay local:
+
+A. OUTLIER
+
+Un pesaje aislado atípico:
+
+- queda registrado;
+- WeightTrend robusto no salta abruptamente;
+- evaluación resultante permanece explicable.
+
+B. DÍA INCOMPLETO
+
+Un CLOSED_INCOMPLETE o día no elegible:
+
+- no se rellena;
+- reduce cobertura/calidad;
+- no puede transformarse en ingesta cero.
+
+C. CORRECCIÓN RETROSPECTIVA
+
+Cambiar materialmente una entrada histórica:
+
+- cambia input revision/evidence;
+- revalida TDEE/stability;
+- crea revisión proporcional;
+- reconstruye evaluación/memoria afectada;
+- no conserva silenciosamente una racha futura obsoleta.
+
+Los fixtures pueden satisfacer este criterio de escenario,
+pero NO los 28 días personales.
+
+==================================================
+23. CRITERIO 10 — REVISIÓN HUMANA
+==================================================
+
+Este criterio NO puede ser autoaprobado por código.
+
+El informe debe mostrar:
+
+HUMAN_REVIEW_REQUIRED
+
+hasta que exista revisión humana real.
+
+NO implementar todavía:
+
+“Activar ADVISORY”
+“Validación aprobada”
+“Comenzar recomendaciones”
+
+como acciones operativas.
+
+La activación explícita se hará en el gate posterior,
+después de revisar los datos personales.
+
+==================================================
+24. SHADOW VALIDATION REPORT
+==================================================
+
+El reporte debe mostrar como mínimo:
+
+- planVersion actual;
+- policy versions;
+- fecha inicial/final;
+- días evaluables / 28;
+- días prospectivos / 14;
+- días de pesaje / 8;
+- cobertura nutricional;
+- energía estimada;
+- fechas TDEE STABLE / 7;
+- cantidad de candidatos ADJUST_UP;
+- cantidad de candidatos ADJUST_DOWN;
+- alternancias;
+- inconsistencias;
+- replay determinista;
+- outlier validado;
+- día incompleto validado;
+- corrección retrospectiva validada;
+- estado de revisión humana;
+- estado global.
+
+No mostrar un porcentaje agregado.
+
+==================================================
+25. ESTADO GLOBAL
+==================================================
+
+Ejemplo de semántica:
+
+INSUFFICIENT_EVIDENCE:
+no existe historia mínima.
+
+IN_PROGRESS:
+la validación real está acumulando evidencia.
+
+BLOCKED_BY_INCONSISTENCY:
+existe una violación técnica/material que debe corregirse.
+
+READY_FOR_HUMAN_REVIEW:
+todos los criterios técnicos cuantificables están satisfechos,
+pero aún falta revisión humana y activación explícita.
+
+READY_FOR_HUMAN_REVIEW NO significa ADVISORY activo.
+
+==================================================
+26. CAMBIO DE PLAN
+==================================================
+
+La validación es por NutritionPlanVersion.
+
+Si el usuario crea voluntariamente un nuevo plan:
+
+- la validación del plan anterior queda histórica;
+- el plan nuevo comienza nueva ventana;
+- no reutilizar 28 días del plan anterior como si fueran del nuevo;
+- DecisionStateMemory sigue la segmentación ya implementada.
+
+No borrar la historia anterior.
+
+No crear tabla de validation_sessions salvo necesidad normativa demostrada.
+
+==================================================
+27. CORRECCIONES RETROSPECTIVAS
+==================================================
+
+FR-043 continúa vigente.
+
+Una edición histórica material debe:
+
+- identificar TDEE afectado;
+- revisar stability;
+- revisar PlanEvaluation afectada;
+- reconstruir memoria desde el primer día afectado;
+- actualizar el reporte Shadow.
+
+No crear recalculation_queue.
+
+Puede seguir siendo recomputación bajo demanda.
+
+==================================================
+28. UI — INSPECTOR SHADOW
+==================================================
+
+Añadir una sección local simple, sin diseño sofisticado.
+
+Título:
+
+VALIDACIÓN SHADOW
+
+Mantener también:
+
+EVALUACIÓN EN VALIDACIÓN
+
+Mostrar:
+
+- progreso de criterios;
+- métricas mencionadas;
+- bloqueos;
+- candidatos hipotéticos en detalle;
+- razones;
+- botón/acción para evaluar hoy en SHADOW;
+- selector explícito de SafetyStatus sin default.
+
+No mostrar:
+
+- objetivo calórico nuevo;
+- +100 kcal;
+- -100 kcal;
+- aceptar;
+- rechazar;
+- aplicar;
+- recomendación direccional operativa.
+
+Un candidato puede mostrarse únicamente en el inspector,
+etiquetado como:
+
+HIPOTÉTICO — NO OPERATIVO
+
+==================================================
+29. BASE_ONLY
+==================================================
+
+Debe continuar siendo absolutamente cierto:
+
+recommendedToday == plan.baseDailyEnergy
+
+Incluso si:
+
+candidateDecision = ADJUST_DOWN
+effectiveDecision = ADJUST_DOWN
+ShadowValidationStatus = READY_FOR_HUMAN_REVIEW
+
+No existe compensación diaria.
+
+No existe ajuste automático.
+
+==================================================
+30. ROOM
+==================================================
+
+Preferencia normativa:
+
+Room permanece versión 4.
+
+No crear nuevas tablas.
+
+No crear:
+
+shadow_validation
+validation_sessions
+replay_runs
+algorithm_runs
+adjustment_proposals
+audit_events
+
+El reporte se calcula bajo demanda desde los registros existentes.
+
+Si no hay necesidad inequívoca de persistir un nuevo concepto:
+
+no materializarlo.
+
+==================================================
+31. TESTS DEL ANALIZADOR
+==================================================
+
+Añadir tests deterministas, como mínimo:
+
+SV-01
+Sin evaluaciones.
+→ INSUFFICIENT_EVIDENCE.
+
+SV-02
+27 días evaluables.
+→ no satisface objetivo de 28.
+
+SV-03
+28 días evaluables pero evidencia prospectiva insuficiente.
+→ no READY_FOR_HUMAN_REVIEW.
+
+SV-04
+Menos de 8 días de pesaje.
+→ criterio peso no cumplido.
+
+SV-05
+Cobertura nutricional 84 %.
+→ no cumple 85 %.
+
+SV-06
+Cobertura nutricional 85 %.
+→ frontera aceptada.
+
+SV-07
+Solo 6 fechas TDEE STABLE.
+→ criterio no cumplido.
+
+SV-08
+7 fechas TDEE STABLE sin inestabilidad crítica.
+→ criterio técnico cumplido.
+
+SV-09
+TDEE con deriva/UNSTABLE.
+→ criterio bloqueado aunque nutrición sea HIGH.
+
+SV-10
+Plan cambia dentro de la ventana.
+→ no mezclar validaciones.
+
+==================================================
+32. TESTS SHADOW
+==================================================
+
+Mantener y ampliar:
+
+SH-01
+Modo inicial SHADOW.
+
+SH-02
+ADJUST_DOWN plenamente calificado.
+→ persistido hipotético;
+→ cero propuestas.
+
+SH-03
+ADJUST_UP plenamente calificado.
+→ plan intacto.
+
+SH-04
+Panel muestra EN VALIDACIÓN.
+
+SH-05
+Cuatro semanas con entradas incompletas.
+→ Shadow continúa;
+→ asesoramiento no habilitado.
+
+SH-06
+TDEE oscilante y candidatos alternantes.
+→ transición bloqueada.
+
+SH-07
+Todos los criterios técnicos satisfechos.
+→ continúa SHADOW;
+→ requiere revisión humana explícita.
+
+SH-08
+NO implementar activación todavía.
+Verificar que no existe transición implícita a ADVISORY.
+
+SH-09
+Cambio de policy.
+→ exige validación nueva/acotada;
+→ no reutiliza aprobación vieja.
+
+SH-10
+Corrección retrospectiva.
+→ historial vigente recompuesto.
+
+SH-11/SH-12
+Readiness e importación Garmin:
+DEFERRED porque aún no existen sus fases.
+
+No inventar sus modelos.
+
+==================================================
+33. TESTS DE REPLAY
+==================================================
+
+RP-01
+Mismos inputs, mismo orden.
+→ mismo resultado exacto.
+
+RP-02
+Mismos inputs entregados en orden diferente.
+→ orden cronológico normalizado;
+→ mismo resultado.
+
+RP-03
+Dos revisiones del mismo referenceDay.
+→ usa solamente latest revision.
+
+RP-04
+Misma evidenceKey repetida.
+→ no crea nueva confirmación.
+
+RP-05
+Día 0/día 1/día 2 de histéresis.
+→ replay y procesamiento online producen igual memory.
+
+RP-06
+Cambio de plan.
+→ memory segmentada.
+
+RP-07
+Corrección retrospectiva.
+→ resultado futuro recompuesto determinísticamente.
+
+==================================================
+34. TESTS DE SAFETY EN VALIDACIÓN
+==================================================
+
+VT-01
+Sin SafetyStatus explícito seleccionado.
+→ UI no permite ejecutar evaluación prospectiva.
+
+VT-02
+CLEAR explícito.
+→ puede evaluar normalmente si demás gates permiten.
+
+VT-03
+CAUTION.
+→ evaluación guardada con autorización limitada.
+
+VT-04
+REVIEW_REQUIRED.
+→ bloqueo inmediato y registro explicable.
+
+No inferir CLEAR automáticamente.
+
+==================================================
+35. TESTS DE PERSISTENCIA
+==================================================
+
+Sin schema nuevo, cubrir:
+
+- saveEvaluation real prospectivo;
+- misma fecha/evidence no crea duplicado;
+- nueva evidence crea revision;
+- currentHistory usa latest revision;
+- correction rebuild memory;
+- validation analyzer consume current revisions;
+- replay no persiste;
+- replay no modifica decision_state_memory;
+- plan real permanece intacto.
+
+==================================================
+36. TEST BASE_ONLY
+==================================================
+
+Caso obligatorio:
+
+PlanEvaluator produce internamente:
+
+candidateDecision = ADJUST_DOWN
+effectiveDecision = ADJUST_DOWN
+
+Shadow analyzer llega incluso a:
+
+READY_FOR_HUMAN_REVIEW
+
+Aun así:
+
+recommendedToday == baseDailyEnergy
+
+y:
+
+NutritionPlanVersion no cambia.
+
+==================================================
+37. NO IMPLEMENTAR
+==================================================
+
+Fuera de alcance absoluto:
+
+AdjustmentProposal
+adjustment_proposals
+deltaEnergy
+newTargetEnergy
+aceptación
+rechazo
+aplicación automática
+ADVISORY activo
+transición efectiva a ADVISORY
+Health Connect
+Garmin
+readiness
+TrainingLoad
+CurrentReadiness
+MorningReadiness
+WorkManager
+backend
+network
+IA
+barcode
+fotografía
+Open Food Facts
+DailyRecommendation ADAPTIVE
+compensación de ejercicio
+
+==================================================
+38. DOCUMENTACIÓN
+==================================================
+
+Crear:
+
+docs/implementation/phase-3-5.md
+
+Documentar:
+
+- diferencia entre tooling y validación real;
+- flujo de evaluación prospectiva;
+- selector explícito de safety;
+- ShadowValidationPolicy;
+- diez criterios formales;
+- qué criterios son automáticos;
+- qué criterios requieren revisión humana;
+- replay;
+- diferencia entre replay y evidencia prospectiva;
+- cambio de plan;
+- corrección retrospectiva;
+- ausencia de nuevas tablas;
+- Room v4;
+- BASE_ONLY;
+- por qué fixtures no autorizan ADVISORY;
+- qué deberá ocurrir durante las próximas semanas de uso real.
+
+No afirmar que la validación personal fue completada.
+
+==================================================
+39. CI LOCAL
+==================================================
+
+Ejecutar:
+
+gradle :core:domain:test --no-daemon --console=plain
+
+gradle :data:local:testDebugUnitTest --no-daemon --console=plain
+
+gradle :app:testDebugUnitTest --no-daemon --console=plain
+
+gradle assemble --no-daemon --no-configuration-cache --console=plain
+
+gradle lint --no-daemon --no-configuration-cache --console=plain
+
+Además:
+
+git diff --check
+
+Verificar:
+
+- core:domain JVM puro;
+- solo tres módulos;
+- Room sigue v4;
+- no hay tablas nuevas;
+- plan_evaluations sigue SHADOW;
+- BASE_ONLY intacto;
+- no AdjustmentProposal;
+- no ADVISORY activo;
+- sin gradle-wrapper.jar;
+- ningún binario nuevo.
+
+==================================================
+40. REVISIÓN DE DIFF
+==================================================
+
+Antes del commit:
+
+git diff --stat origin/main...HEAD
+git diff --numstat origin/main...HEAD
+
+Confirmar:
+
+- todos los archivos textuales;
+- ningún cambio cosmético masivo;
+- ningún cambio de workflow salvo necesidad real;
+- ninguna integración futura;
+- ningún módulo especulativo.
+
+==================================================
+41. COMMIT
+==================================================
+
+Rama:
+
+phase-3-5-shadow-validation
+
+Un único commit si es razonablemente posible.
+
+Mensaje sugerido:
+
+Implement Shadow validation tooling for Phase 3.5
+
+Parent esperado:
+
+el `origin/main` actual que haya superado la precondición de la sección 1.
+
+No rebase.
+No squash.
+No push manual.
+
+Después del trabajo, el PR de Codex se utilizará únicamente como transporte.
+
+==================================================
+42. INFORME FINAL
+==================================================
+
+Reportar:
+
+PRECONDICIÓN
+- origin/main;
+- rama;
+- parent;
+- delta desde `c9b96f...` previo a la rama, si existe, confirmando que solo eran prompts de transporte.
+
+TOOLING
+- componentes nuevos;
+- policy;
+- estados del reporte.
+
+VALIDACIÓN PROSPECTIVA
+- cómo se ejecuta;
+- cómo se elige SafetyStatus;
+- idempotencia;
+- revisiones.
+
+CRITERIOS 1–10
+Para cada uno:
+- implementación;
+- métrica;
+- estado automático o humano.
+
+REPLAY
+- estrategia;
+- inputs;
+- determinismo;
+- no persistencia.
+
+UI
+- inspector;
+- EN VALIDACIÓN;
+- acciones disponibles;
+- acciones prohibidas.
+
+PERSISTENCIA
+- Room anterior;
+- Room final;
+- tablas nuevas;
+- confirmación de que adjustment_proposals no existe.
+
+TESTS
+- SV;
+- SH;
+- RP;
+- VT;
+- persistencia;
+- BASE_ONLY;
+- comandos y resultados.
+
+ALCANCE
+- FR-029: CUMPLIDO / NO
+- FR-034: CUMPLIDO / NO
+- FR-035: CUMPLIDO / NO
+- FR-036 tooling: CUMPLIDO / NO
+- FR-043: CUMPLIDO / NO
+- BASE_ONLY: CUMPLIDO / NO
+- SHADOW: CUMPLIDO / NO
+- AdjustmentProposal: NO
+- ADVISORY activo: NO
+- Health Connect/Garmin: NO
+
+VALIDACIÓN REAL
+Reportar explícitamente:
+
+- 28 días personales completados: NO, salvo evidencia real existente.
+- 14 días prospectivos completados: NO, salvo evidencia real existente.
+- revisión humana final: NO.
+- ADVISORY autorizado: NO.
+
+No usar fixtures para cambiar ninguno de esos NO a SÍ.
+
+Estado final permitido:
+
+PHASE_3_5_TOOLING_READY
+
+o
+
+PHASE_3_5_BLOCKED
+
+NO usar:
+
+PHASE_3_5_COMPLETE
+ADVISORY_READY
+ADVISORY_ENABLED

@@ -1,0 +1,299 @@
+DESBLOQUEO FASE 3.5 — REPLAY EXACTO Y TRAZABILIDAD DE StabilityPolicy
+
+La detección del bloqueo es válida.
+
+La especificación v1.1 exige para 3c–3.5 `plan_evaluations` con modo y resumen embebido, y permite que versiones de algoritmo/política y otros datos de trazabilidad residan en columnas estructuradas sin crear tablas de auditoría normalizadas. También establece que una nueva capacidad que lo necesite puede introducir una migración probada y proporcional.
+
+Por tanto se AUTORIZA una ampliación mínima del schema para resolver exclusivamente este gap.
+
+==================================================
+1. CAMBIO DE LA RESTRICCIÓN ROOM
+==================================================
+
+Queda reemplazada únicamente la restricción anterior que exigía mantener Room v4.
+
+Autorizar:
+
+Room version = 5
+MIGRATION_4_5
+
+No crear nuevas tablas.
+
+Las únicas tablas de evaluación continúan siendo:
+
+plan_evaluations
+decision_state_memory
+
+NO crear:
+
+shadow_validation
+validation_sessions
+replay_runs
+algorithm_runs
+algorithm_run_inputs
+decision_reasons
+audit_events
+recalculation_queue
+adjustment_proposals
+
+==================================================
+2. CAMPO ESTRUCTURADO AUTORIZADO
+==================================================
+
+Añadir proporcionalmente a PlanEvaluation y PlanEvaluationEntity:
+
+estimatorStabilityPolicyVersion
+
+Semántica:
+
+versión exacta de StabilityPolicy utilizada por el EstimatorStability que fue input de esa ejecución de PlanEvaluator.
+
+No confundir con:
+
+- evaluatorPolicyVersion;
+- TdeePolicy.version;
+- algorithmVersion;
+- TDEE policyVersion.
+
+Para nuevas evaluaciones SHADOW generadas desde Fase 3.5:
+
+estimatorStabilityPolicyVersion DEBE provenir directamente de:
+
+input.estimatorStability.policyVersion
+
+No hardcodear "stability-v1".
+No inferir desde TDEE.
+No parsear evidenceKey.
+
+==================================================
+3. COMPATIBILIDAD CON FILAS LEGACY v4
+==================================================
+
+NO fabricar la StabilityPolicy histórica de filas ya existentes.
+
+Por esa razón, la columna física de MIGRATION_4_5 debe ser nullable para registros legacy, por ejemplo:
+
+estimatorStabilityPolicyVersion TEXT NULL
+
+El modelo de dominio puede representar esta ausencia explícitamente.
+
+Regla:
+
+- evaluaciones nuevas creadas por el flujo prospectivo de Fase 3.5: valor obligatorio/no nulo;
+- evaluaciones migradas desde v4: null si no existe evidencia estructurada inequívoca.
+
+NO rellenar las filas antiguas con "stability-v1" solo porque sea el valor por defecto actual.
+
+NO reconstruirlo informalmente desde evidenceKey.
+
+Una fila legacy con valor null:
+
+- se conserva;
+- sigue siendo visible históricamente;
+- NO se considera replay exacto reproducible;
+- debe producir una razón/estado explícito de input de replay incompleto;
+- no puede hacer que el criterio de reproducibilidad se considere MET.
+
+Esto evita inventar historia y permite que las nuevas evaluaciones prospectivas sí sean plenamente reproducibles.
+
+==================================================
+4. MIGRATION_4_5
+==================================================
+
+Implementar migración no destructiva 4 -> 5.
+
+Debe:
+
+- preservar todas las tablas y filas existentes;
+- añadir únicamente el campo estructurado necesario a plan_evaluations;
+- no crear tablas;
+- no borrar ni reescribir evaluaciones históricas;
+- dejar null para filas legacy sin valor estructurado conocido.
+
+Registrar:
+
+MIGRATION_1_2
+MIGRATION_2_3
+MIGRATION_3_4
+MIGRATION_4_5
+
+No usar fallback destructive migration.
+
+Añadir test real de migración 4 -> 5.
+
+Verificar:
+
+- datos v4 preservados;
+- columna nueva presente;
+- fila legacy mantiene null;
+- ninguna tabla nueva inesperada;
+- adjustment_proposals sigue sin existir.
+
+==================================================
+5. PLAN EVALUATION / MAPPERS
+==================================================
+
+Actualizar proporcionalmente:
+
+PlanEvaluation
+PlanEvaluationEntity
+mappers
+persistencia
+fixtures/tests
+
+Para nuevas evaluaciones producidas por PlanEvaluator:
+
+estimatorStabilityPolicyVersion = input.estimatorStability.policyVersion
+
+El valor debe formar parte de la observabilidad estructurada.
+
+No cambiar la semántica de evidenceKey salvo que sea necesario para mantener coherencia con el campo ya incluido materialmente en la evidencia.
+
+==================================================
+6. REPLAY EXACTO
+==================================================
+
+Una evaluación es candidata a replay exacto únicamente si todos los inputs imprescindibles están disponibles estructuralmente.
+
+Para estimator stability, exigir:
+
+estimatorStabilityPolicyVersion != null
+
+Si es null:
+
+NO asumir valor.
+NO parsear evidenceKey.
+NO declarar replay determinista exitoso.
+
+El reporte debe distinguir, con estado o motivo estructurado equivalente:
+
+REPLAY_INPUT_INCOMPLETE
+LEGACY_STABILITY_POLICY_UNKNOWN
+
+o nomenclatura equivalente clara.
+
+Las evaluaciones prospectivas nuevas deben ser replayables con la versión real persistida.
+
+==================================================
+7. CRITERIOS DE VALIDACIÓN
+==================================================
+
+La existencia de filas legacy no invalida automáticamente toda la Fase 3.5.
+
+Pero esas filas:
+
+- no pueden satisfacer por sí solas el criterio de replay exacto;
+- no pueden convertir reproducibilidad a MET;
+- no deben contarse como evidencia prospectiva nueva;
+- pueden permanecer como contexto histórico visible.
+
+La ventana personal de Fase 3.5 debe acumular nueva evidencia prospectiva con observabilidad suficiente.
+
+==================================================
+8. TESTS OBLIGATORIOS ADICIONALES
+==================================================
+
+RV-01
+Nueva evaluación con EstimatorStability.policyVersion = "stability-v1".
+→ PlanEvaluation persiste exactamente "stability-v1".
+
+RV-02
+Nueva evaluación con policy custom de test, por ejemplo "stability-test-v2".
+→ se persiste exactamente esa versión;
+→ prueba que no está hardcodeada.
+
+RV-03
+Migration 4 -> 5 con una plan_evaluation existente.
+→ fila preservada;
+→ estimatorStabilityPolicyVersion == null.
+
+RV-04
+Replay de fila legacy con policy null.
+→ no inventa policy;
+→ reproducibilidad no MET;
+→ razón explícita de input incompleto.
+
+RV-05
+Replay de fila nueva con policy estructurada.
+→ usa exactamente esa policyVersion.
+
+RV-06
+Room round-trip de estimatorStabilityPolicyVersion.
+
+==================================================
+9. RESTO DEL ENCARGO 3.5
+==================================================
+
+Después de implementar este cambio mínimo, continuar íntegramente el encargo principal:
+
+docs/codex-prompts/phase-3-5-shadow-validation.txt
+
+Todas sus restricciones siguen vigentes salvo las reemplazadas expresamente aquí:
+
+ANTES:
+Room v4 obligatorio.
+
+AHORA:
+Room v5 autorizado únicamente por este campo estructurado y MIGRATION_4_5.
+
+ANTES:
+sin migración adicional.
+
+AHORA:
+MIGRATION_4_5 autorizada exclusivamente para este gap.
+
+Sigue prohibido:
+
+- tablas nuevas;
+- AdjustmentProposal;
+- ADVISORY activo;
+- Health Connect/Garmin;
+- readiness;
+- Fase posterior;
+- datos inventados;
+- parsing informal de evidenceKey como sustituto de datos estructurados.
+
+==================================================
+10. GIT / PROMPTS DE TRANSPORTE
+==================================================
+
+El main funcional certificado de Fase 3c sigue siendo:
+
+c9b96f887c1b92ecd808c2575d85c1675ae4c8fe
+
+Puede haber commits posteriores que únicamente agregan prompts de transporte en:
+
+continuacion_prompt_fase_3_5.txt
+CODEX_TASK.md
+codex-prompts/*
+docs/codex-prompts/*
+
+Antes de continuar:
+
+1. git fetch origin main --prune
+2. verificar que c9b96f... sigue siendo ancestro de origin/main;
+3. verificar que desde c9b96f... hasta origin/main no haya cambios funcionales fuera de archivos de transporte;
+4. actualizar/recrear la rama local phase-3-5-shadow-validation desde el origin/main ACTUAL si todavía no contiene cambios funcionales propios.
+
+Los commits de transporte no forman parte del delta funcional de Fase 3.5.
+
+==================================================
+11. RESULTADO FINAL
+==================================================
+
+Si este era el único bloqueo y el tooling completo queda implementado y certificado:
+
+PHASE_3_5_TOOLING_READY
+
+Si aparece otro input imprescindible ausente o un bloqueo material distinto:
+
+PHASE_3_5_BLOCKED
+
+No declarar:
+
+PHASE_3_5_COMPLETE
+SHADOW_VALIDATED
+ADVISORY_READY
+ADVISORY_ENABLED
+
+La validación personal real continúa requiriendo la ventana y revisión humana definidas en la especificación.
