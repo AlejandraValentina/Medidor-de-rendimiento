@@ -178,9 +178,10 @@ class DatabaseTest {
         database.planEvaluations().insert(evaluation("two",2,PlanDecision.MAINTAIN).toEntity())
         assertEquals(PlanDecision.MAINTAIN, database.planEvaluations().currentHistory("profile").single().toDomain().effectiveDecision)
         val memory = DecisionStateMemory(LocalId("profile"), LocalId("plan"), "policy", day, "e-2", PlanDecision.ADJUST_DOWN,
-            1, day, PlanDecision.MAINTAIN, 2)
+            1, day, day, PlanDecision.MAINTAIN, 2)
         database.decisionStateMemory().save(memory.toEntity())
         assertEquals(memory, database.decisionStateMemory().get("plan")?.toDomain())
+        assertEquals(day, database.decisionStateMemory().get("plan")?.lastQualifiedDayEpochDay?.toCivilDay())
 
         val store = Phase2aStore(database)
         val firstDay = CivilDay.parse("2026-08-21")

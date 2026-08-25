@@ -85,6 +85,11 @@ class MigrationTest {
             assertEquals("preserved", db.query("SELECT marker FROM $table LIMIT 1").use { it.moveToFirst(); it.getString(0) })
         }
         val tables = db.query("SELECT name FROM sqlite_master WHERE type='table' AND name IN ('plan_evaluations','decision_state_memory','adjustment_proposals') ORDER BY name").use { c -> buildList { while(c.moveToNext()) add(c.getString(0)) } }
-        assertEquals(listOf("decision_state_memory","plan_evaluations"), tables); helper.close()
+        assertEquals(listOf("decision_state_memory","plan_evaluations"), tables)
+        val memoryColumns = db.query("PRAGMA table_info(`decision_state_memory`)").use { cursor ->
+            buildList { while (cursor.moveToNext()) add(cursor.getString(cursor.getColumnIndexOrThrow("name"))) }
+        }
+        assertTrue("lastQualifiedDayEpochDay" in memoryColumns)
+        helper.close()
     }
 }

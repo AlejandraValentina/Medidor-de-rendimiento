@@ -52,7 +52,8 @@ data class PlanEvaluation(
 data class DecisionStateMemory(
     val profileId: LocalId, val planVersionId: LocalId, val policyVersion: String, val lastProcessedDay: CivilDay,
     val lastEvidenceKey: String, val directionalCandidate: PlanDecision?, val qualifiedConfirmationCount: Int,
-    val firstQualifiedDay: CivilDay?, val lastEffectiveDecision: PlanDecision, val revision: Long = 1,
+    val firstQualifiedDay: CivilDay?, val lastQualifiedDay: CivilDay?, val lastEffectiveDecision: PlanDecision,
+    val revision: Long = 1,
 ) { init { require(qualifiedConfirmationCount >= 0 && revision > 0) } }
 
 data class PlanEvaluatorInput(
@@ -142,10 +143,13 @@ class PlanEvaluator(private val policy: PlanEvaluatorPolicy = PlanEvaluatorPolic
 
     private fun updateMemory(input: PlanEvaluatorInput, candidate: PlanDecision, key: String, previous: DecisionStateMemory?, reset: Boolean, reasons: MutableSet<PlanEvaluationReason>): DecisionStateMemory {
         val planId = requireNotNull(input.plan).id
-        if (reset || !candidate.isDirectional()) return DecisionStateMemory(input.profileId, planId, policy.version, input.referenceDay, key, null, 0, null, PlanDecision.OBSERVE, (previous?.revision ?: 0) + 1)
+        if (reset || !candidate.isDirectional()) return DecisionStateMemory(input.profileId, planId, policy.version,
+            input.referenceDay, key, null, 0, null, null, PlanDecision.OBSERVE, (previous?.revision ?: 0) + 1)
         if (previous?.lastProcessedDay == input.referenceDay || previous?.lastEvidenceKey == key) { reasons += PlanEvaluationReason.DUPLICATE_EVIDENCE; return requireNotNull(previous) }
         val same = previous?.directionalCandidate == candidate
-        val separated = previous?.lastProcessedDay?.let { input.referenceDay.value.toEpochDay() - it.value.toEpochDay() >= policy.minimumConfirmationSeparationDays } ?: true
+        val separated = previous?.lastQualifiedDay?.let {
+            input.referenceDay.value.toEpochDay() - it.value.toEpochDay() >= policy.minimumConfirmationSeparationDays
+        } ?: true
         val count = when {
             same && separated -> previous!!.qualifiedConfirmationCount + 1
             same -> previous!!.qualifiedConfirmationCount
@@ -153,7 +157,9 @@ class PlanEvaluator(private val policy: PlanEvaluatorPolicy = PlanEvaluatorPolic
         }
         reasons += if (count >= policy.requiredIndependentConfirmations) PlanEvaluationReason.HYSTERESIS_CONFIRMED else PlanEvaluationReason.HYSTERESIS_PENDING
         return DecisionStateMemory(input.profileId, planId, policy.version, input.referenceDay, key, candidate, count,
-            if (same) previous?.firstQualifiedDay else input.referenceDay, previous?.lastEffectiveDecision ?: PlanDecision.OBSERVE, (previous?.revision ?: 0) + 1)
+            if (same) previous?.firstQualifiedDay else input.referenceDay,
+            if (!same || separated) input.referenceDay else previous?.lastQualifiedDay,
+            previous?.lastEffectiveDecision ?: PlanDecision.OBSERVE, (previous?.revision ?: 0) + 1)
     }
 
     private fun evidenceKey(input: PlanEvaluatorInput, candidate: PlanDecision): String {
@@ -178,7 +184,9 @@ object DecisionStateMemoryRebuilder {
             val qualified = e.qualifiedForHysteresis && e.candidateDecision.isDirectional() && e.evaluatorPolicyVersion == policy.version
             val compatible = memory?.planVersionId == plan && memory?.policyVersion == policy.version
             val duplicate = memory?.lastEvidenceKey == e.evidenceKey
-            val separated = memory?.lastProcessedDay?.let { e.referenceDay.value.toEpochDay() - it.value.toEpochDay() >= policy.minimumConfirmationSeparationDays } ?: true
+            val separated = memory?.lastQualifiedDay?.let {
+                e.referenceDay.value.toEpochDay() - it.value.toEpochDay() >= policy.minimumConfirmationSeparationDays
+            } ?: true
             val same = compatible && memory?.directionalCandidate == e.candidateDecision
             val count = when {
                 !qualified -> 0
@@ -188,9 +196,21 @@ object DecisionStateMemoryRebuilder {
                 same -> memory!!.qualifiedConfirmationCount
                 else -> 1
             }
+            val lastQualifiedDay = when {
+                !qualified -> null
+                duplicate && same -> memory?.lastQualifiedDay
+                duplicate -> null
+                !same || separated -> e.referenceDay
+                else -> memory?.lastQualifiedDay
+            }
+            val firstQualifiedDay = when {
+                !qualified -> null
+                same -> memory?.firstQualifiedDay
+                else -> e.referenceDay
+            }
             memory = DecisionStateMemory(e.profileId, plan, policy.version, e.referenceDay, e.evidenceKey,
-                e.candidateDecision.takeIf { qualified }, count, if (count == 1) e.referenceDay else memory?.firstQualifiedDay,
-                e.effectiveDecision, (memory?.revision ?: 0) + 1)
+                e.candidateDecision.takeIf { qualified }, count, firstQualifiedDay,
+                lastQualifiedDay, e.effectiveDecision, (memory?.revision ?: 0) + 1)
         }
         return memory
     }

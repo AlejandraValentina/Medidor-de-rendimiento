@@ -72,6 +72,29 @@ class PlanEvaluatorTest {
         assertFalse(second.evaluation.operational)
     }
 
+    @Test fun `confirmation spacing uses the last day that actually incremented the streak`() {
+        val day0 = evaluator.evaluate(input(0, -80), null)
+        assertEquals(1, day0.memory?.qualifiedConfirmationCount)
+        assertEquals(CivilDay.parse("2026-08-01"), day0.memory?.lastQualifiedDay)
+
+        val day1 = evaluator.evaluate(input(1, -80), day0.memory)
+        assertEquals(1, day1.memory?.qualifiedConfirmationCount)
+        assertEquals(CivilDay.parse("2026-08-02"), day1.memory?.lastProcessedDay)
+        assertEquals(CivilDay.parse("2026-08-01"), day1.memory?.lastQualifiedDay)
+
+        val day2 = evaluator.evaluate(input(2, -80), day1.memory)
+        assertEquals(2, day2.memory?.qualifiedConfirmationCount)
+        assertEquals(CivilDay.parse("2026-08-03"), day2.memory?.lastQualifiedDay)
+        assertEquals(PlanDecision.ADJUST_DOWN, day2.evaluation.effectiveDecision)
+        assertNull(day2.evaluation.operationalDecision)
+        assertEquals(DecisionAuthorization.OBSERVE_ONLY, day2.evaluation.authorization)
+
+        val rebuilt = DecisionStateMemoryRebuilder.rebuild(
+            listOf(day0.evaluation, day1.evaluation, day2.evaluation),
+        )
+        assertEquals(day2.memory, rebuilt)
+    }
+
     @Test fun `HM-03 HM-04 and HM-05 same date revision or evidence does not add a day`() {
         val first = evaluator.evaluate(input(0, -80), null)
         val repeated = evaluator.evaluate(input(0, -80, revision = 2), first.memory)

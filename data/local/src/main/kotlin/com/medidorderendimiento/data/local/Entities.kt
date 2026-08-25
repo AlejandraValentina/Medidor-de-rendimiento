@@ -188,4 +188,5 @@ data class PlanEvaluationEntity(@PrimaryKey val evaluationId: String, val profil
 ], indices = [Index("profileId", "lastProcessedDayEpochDay")])
 data class DecisionStateMemoryEntity(@PrimaryKey val planVersionId: String, val profileId: String, val policyVersion: String,
     val lastProcessedDayEpochDay: Long, val lastEvidenceKey: String, val directionalCandidate: String?,
-    val qualifiedConfirmationCount: Int, val firstQualifiedDayEpochDay: Long?, val lastEffectiveDecision: String, val revision: Long)
+    val qualifiedConfirmationCount: Int, val firstQualifiedDayEpochDay: Long?, val lastQualifiedDayEpochDay: Long?,
+    val lastEffectiveDecision: String, val revision: Long)

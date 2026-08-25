@@ -133,7 +133,8 @@ fun PlanEvaluationEntity.toDomain() = PlanEvaluation(LocalId(evaluationId), Loca
     estimatedEnergyPermillion, evaluatorPolicyVersion, evidenceKey, inputRevision, revision)
 fun DecisionStateMemory.toEntity() = DecisionStateMemoryEntity(planVersionId.value, profileId.value, policyVersion,
     lastProcessedDay.toEpochDay(), lastEvidenceKey, directionalCandidate?.name, qualifiedConfirmationCount,
-    firstQualifiedDay?.toEpochDay(), lastEffectiveDecision.name, revision)
+    firstQualifiedDay?.toEpochDay(), lastQualifiedDay?.toEpochDay(), lastEffectiveDecision.name, revision)
 fun DecisionStateMemoryEntity.toDomain() = DecisionStateMemory(LocalId(profileId), LocalId(planVersionId), policyVersion,
     lastProcessedDayEpochDay.toCivilDay(), lastEvidenceKey, directionalCandidate?.let(PlanDecision::valueOf),
-    qualifiedConfirmationCount, firstQualifiedDayEpochDay?.toCivilDay(), PlanDecision.valueOf(lastEffectiveDecision), revision)
+    qualifiedConfirmationCount, firstQualifiedDayEpochDay?.toCivilDay(), lastQualifiedDayEpochDay?.toCivilDay(),
+    PlanDecision.valueOf(lastEffectiveDecision), revision)
