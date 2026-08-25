@@ -60,6 +60,7 @@ import androidx.room.*
     fun latest(profileId: String): TdeeEstimateEntity?
     @Query("SELECT * FROM tdee_estimates WHERE profileId = :profileId AND referenceDayEpochDay = :day ORDER BY revision DESC LIMIT 1")
     fun latestForDay(profileId: String, day: Long): TdeeEstimateEntity?
+    @Query("SELECT * FROM tdee_estimates WHERE tdeeId = :id LIMIT 1") fun get(id: String): TdeeEstimateEntity?
 }
 @Dao interface PlanEvaluationDao {
     @Insert fun insert(entity: PlanEvaluationEntity)

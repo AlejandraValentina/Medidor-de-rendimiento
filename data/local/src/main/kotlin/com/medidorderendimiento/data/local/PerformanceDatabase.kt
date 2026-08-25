@@ -10,7 +10,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
 @Database(entities = [UserProfileEntity::class, NutritionPlanVersionEntity::class, WeightMeasurementEntity::class,
     FoodProductEntity::class, FoodEntryEntity::class, NutritionDiaryDayEntity::class, FavoriteFoodEntity::class,
     SavedMealEntity::class, SavedMealItemEntity::class, TdeeEstimateEntity::class, PlanEvaluationEntity::class,
-    DecisionStateMemoryEntity::class], version = 4, exportSchema = false)
+    DecisionStateMemoryEntity::class], version = 5, exportSchema = false)
 abstract class PerformanceDatabase : RoomDatabase() {
     abstract fun userProfiles(): UserProfileDao
     abstract fun nutritionPlans(): NutritionPlanDao
@@ -56,7 +56,12 @@ val MIGRATION_3_4 = object : Migration(3, 4) {
         db.execSQL("CREATE INDEX IF NOT EXISTS `index_decision_state_memory_profileId_lastProcessedDayEpochDay` ON `decision_state_memory` (`profileId`,`lastProcessedDayEpochDay`)")
     }
 }
+val MIGRATION_4_5 = object : Migration(4, 5) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL("ALTER TABLE `plan_evaluations` ADD COLUMN `estimatorStabilityPolicyVersion` TEXT")
+    }
+}
 
 fun createPerformanceDatabase(context: Context): PerformanceDatabase =
     Room.databaseBuilder(context.applicationContext, PerformanceDatabase::class.java, "performance.db")
-        .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4).build()
+        .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5).build()

@@ -14,6 +14,24 @@ class Phase2aStateTest {
         assertEquals(plan.baseDailyEnergy, state.recommendedToday)
     }
 
+    @Test fun `BASE_ONLY remains unchanged when shadow tooling is ready for human review`() {
+        val plan = NutritionPlanVersion(LocalId("shadow-plan"), NutritionGoal.LOSS, EnergyAmount.ofKilocalories(2_050),
+            null, TargetWeeklyRate.ofGrams(350), day, acceptance = PlanAcceptance(Instant.EPOCH))
+        val report = ShadowValidationReport(plan.id, "shadow-validation-v1", setOf("plan-evaluator-v1"),
+            setOf("stability-v1"), setOf("tdee-v1"), day, day, 28, 14, 8, 28, 4,
+            24, 28, 857_142, 0, DataQualityLabel.HIGH, 7, 0, 1, 0, emptyList(), emptyList(),
+            ShadowValidationStatus.READY_FOR_HUMAN_REVIEW)
+        val state = Phase2aUiState(civilDay = day, plan = plan, shadowValidationReport = report)
+        assertEquals(plan.baseDailyEnergy, state.recommendedToday)
+    }
+
+    @Test fun `VT-01 to VT-04 shadow evaluation requires an explicit safety selection`() {
+        assertFalse(canEvaluateShadow(null))
+        assertTrue(canEvaluateShadow(SafetyStatus.CLEAR))
+        assertTrue(canEvaluateShadow(SafetyStatus.CAUTION))
+        assertTrue(canEvaluateShadow(SafetyStatus.REVIEW_REQUIRED))
+    }
+
     @Test fun `missing observations and nutrients never become zero`() {
         val state = Phase2aUiState(civilDay = day)
         assertNull(state.latestWeight)

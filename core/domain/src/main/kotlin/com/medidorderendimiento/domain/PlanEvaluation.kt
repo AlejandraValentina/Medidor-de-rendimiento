@@ -38,6 +38,7 @@ data class PlanEvaluation(
     val observedWeeklyRateGrams: Long?, val weightConfidence: WeightTrendConfidence,
     val weightDistinctDays: Int, val weightSpanDays: Long, val weightMaximumGapDays: Long,
     val tdeeMaturity: TdeeMaturity?, val estimatorStabilityStatus: EstimatorStabilityStatus,
+    val estimatorStabilityPolicyVersion: String?,
     val nutritionQualityLabel: DataQualityLabel?, val eligibleNutritionDays: Int?, val requiredNutritionDays: Int?,
     val estimatedEnergyPermillion: Int?, val evaluatorPolicyVersion: String, val evidenceKey: String,
     val inputRevision: Long, val revision: Long = 1,
@@ -95,6 +96,7 @@ class PlanEvaluator(private val policy: PlanEvaluatorPolicy = PlanEvaluatorPolic
             tdee?.windowStart, tdee?.windowEnd, tdee?.id, tdee?.referenceDay, tdee?.revision, input.weightTrend.weeklyRateGrams,
             input.weightTrend.confidence, input.weightTrend.coverage.distinctDays, input.weightTrend.coverage.spanDays,
             input.weightTrend.coverage.maximumGapDays, tdee?.maturity, input.estimatorStability.status,
+            input.estimatorStability.policyVersion,
             tdee?.nutritionQuality?.label, tdee?.nutritionQuality?.eligibleDays, tdee?.nutritionQuality?.requiredDays,
             tdee?.nutritionQuality?.estimatedEnergyPermillion, policy.version, evidenceKey, input.inputRevision)
         return PlanEvaluatorResult(evaluation, memory?.copy(lastEffectiveDecision = effective))

@@ -11,6 +11,27 @@ import org.robolectric.RobolectricTestRunner
 
 @RunWith(RobolectricTestRunner::class)
 class MigrationTest {
+    @Test fun `migration 4 to 5 preserves legacy evaluation with unknown stability policy and adds no table`() {
+        val helper = FrameworkSQLiteOpenHelperFactory().create(SupportSQLiteOpenHelper.Configuration.builder(
+            ApplicationProvider.getApplicationContext()).name(null).callback(object : SupportSQLiteOpenHelper.Callback(4) {
+            override fun onCreate(db: SupportSQLiteDatabase) {
+                db.execSQL("CREATE TABLE plan_evaluations (evaluationId TEXT NOT NULL PRIMARY KEY, marker TEXT)")
+                db.execSQL("CREATE TABLE decision_state_memory (planVersionId TEXT NOT NULL PRIMARY KEY)")
+                db.execSQL("INSERT INTO plan_evaluations VALUES ('legacy','preserved')")
+            }
+            override fun onUpgrade(db: SupportSQLiteDatabase, oldVersion: Int, newVersion: Int) = Unit
+        }).build())
+        val db = helper.writableDatabase
+        MIGRATION_4_5.migrate(db)
+        db.query("SELECT marker, estimatorStabilityPolicyVersion FROM plan_evaluations WHERE evaluationId='legacy'").use {
+            assertTrue(it.moveToFirst()); assertEquals("preserved", it.getString(0)); assertTrue(it.isNull(1))
+        }
+        val tables = db.query("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name").use { cursor ->
+            buildList { while (cursor.moveToNext()) add(cursor.getString(0)) }
+        }
+        assertEquals(listOf("decision_state_memory", "plan_evaluations"), tables)
+        helper.close()
+    }
     @Test fun `migration 1 to 2 preserves existing data and adds only phase 2b tables`() {
         val helper = FrameworkSQLiteOpenHelperFactory().create(SupportSQLiteOpenHelper.Configuration.builder(
             ApplicationProvider.getApplicationContext()).name(null).callback(object : SupportSQLiteOpenHelper.Callback(1) {

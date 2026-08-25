@@ -178,7 +178,8 @@ data class PlanEvaluationEntity(@PrimaryKey val evaluationId: String, val profil
     val tdeeEstimateId: String?, val tdeeReferenceDayEpochDay: Long?, val tdeeRevision: Long?,
     val observedWeeklyRateGrams: Long?, val weightConfidence: String,
     val weightDistinctDays: Int, val weightSpanDays: Long, val weightMaximumGapDays: Long, val tdeeMaturity: String?,
-    val estimatorStabilityStatus: String, val nutritionQualityLabel: String?, val eligibleNutritionDays: Int?,
+    val estimatorStabilityStatus: String, val estimatorStabilityPolicyVersion: String?,
+    val nutritionQualityLabel: String?, val eligibleNutritionDays: Int?,
     val requiredNutritionDays: Int?, val estimatedEnergyPermillion: Int?, val evaluatorPolicyVersion: String, val evidenceKey: String,
     val inputRevision: Long, val revision: Long)
 

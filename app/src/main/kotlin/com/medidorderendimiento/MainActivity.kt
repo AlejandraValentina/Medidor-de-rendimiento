@@ -31,6 +31,7 @@ private fun Phase2aScreen(viewModel: Phase2aViewModel) {
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Text("Medidor de rendimiento", style = MaterialTheme.typography.headlineSmall)
         Panel(state)
+        ShadowValidationInspector(state, viewModel)
         PlanForm(viewModel)
         WeightForm(viewModel)
         ProductForm(viewModel)
@@ -45,6 +46,39 @@ private fun Phase2aScreen(viewModel: Phase2aViewModel) {
             TextButton(onClick = { viewModel.setDiaryState(it) }) { Text(it.name) }
         }
     }
+}
+
+@Composable private fun ShadowValidationInspector(state: Phase2aUiState, vm: Phase2aViewModel) {
+    Text("VALIDACIÓN SHADOW", style = MaterialTheme.typography.titleMedium)
+    Text("EVALUACIÓN EN VALIDACIÓN · ADVISORY desactivado")
+    Text("Safety explícito (sin valor predeterminado)")
+    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        SafetyStatus.entries.forEach { status ->
+            FilterChip(selected = state.selectedSafetyStatus == status, onClick = { vm.selectShadowSafety(status) },
+                label = { Text(status.name) })
+        }
+    }
+    Button(enabled = canEvaluateShadow(state.selectedSafetyStatus), onClick = vm::evaluateShadowToday) {
+        Text("Evaluar hoy en SHADOW")
+    }
+    val report = state.shadowValidationReport
+    Text("Estado tooling: ${report?.status ?: ShadowValidationStatus.INSUFFICIENT_EVIDENCE}")
+    report?.let {
+        Text("Policies: validation=${it.policyVersion}; evaluator=${it.evaluatorPolicyVersions}; stability=${it.stabilityPolicyVersions}; TDEE=${it.tdeePolicyVersions}")
+        Text("Días evaluables: ${it.evaluableDays}/28 · prospectivos: ${it.prospectiveDays}/14")
+        Text("Peso: ${it.weightDistinctDays}/8 días · span ${it.weightSpanDays} · gap máximo ${it.weightMaximumGapDays}")
+        Text("Nutrición elegible: ${it.eligibleNutritionDays}/${it.totalWindowDays} · ${it.nutritionCoveragePermillion} ppm")
+        Text("Energía estimada: ${it.estimatedEnergyPermillion ?: 0} ppm · TDEE estable: ${it.stableTdeeDates}/7")
+        Text("Candidatos hipotéticos: ↑ ${it.adjustUpCandidates} · ↓ ${it.adjustDownCandidates}; alternancias ${it.alternations}")
+        it.criteria.forEach { criterion -> Text("${criterion.criterion}: ${criterion.state} — ${criterion.evidence.joinToString()}") }
+    }
+    state.shadowEvaluations.filter { it.candidateDecision in setOf(PlanDecision.ADJUST_UP, PlanDecision.ADJUST_DOWN) }
+        .forEach { evaluation ->
+            Text("HIPOTÉTICO — NO OPERATIVO · ${evaluation.referenceDay.value} · ${evaluation.candidateDecision}")
+            Text("Plan ${evaluation.planVersionId?.value}; observado ${evaluation.observedWeeklyRateGrams} g/sem; objetivo ${state.plan?.targetWeeklyRate?.grams} g/sem; efectivo ${evaluation.effectiveDecision}")
+            Text("Safety ${evaluation.safetyStatus}; peso ${evaluation.weightConfidence}; nutrición ${evaluation.nutritionQualityLabel}; TDEE ${evaluation.tdeeMaturity}; estabilidad ${evaluation.estimatorStabilityStatus}")
+            Text("Evidencia ${evaluation.evidenceKey}; revisión ${evaluation.revision}; razones ${evaluation.reasons.joinToString()}")
+        }
 }
 
 @Composable private fun QuickRegistration(state: Phase2aUiState, vm: Phase2aViewModel) {

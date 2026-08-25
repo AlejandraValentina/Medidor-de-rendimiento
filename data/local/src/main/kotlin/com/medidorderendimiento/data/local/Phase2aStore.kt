@@ -111,6 +111,19 @@ class Phase2aStore(private val database: PerformanceDatabase) {
 
     fun evaluationMemory(planVersionId: LocalId): DecisionStateMemory? = database.decisionStateMemory().get(planVersionId.value)?.toDomain()
     fun currentEvaluations(profileId: LocalId): List<PlanEvaluation> = database.planEvaluations().currentHistory(profileId.value).map(PlanEvaluationEntity::toDomain)
+    fun hasRetrospectiveEvaluationRevision(profileId: LocalId): Boolean =
+        database.planEvaluations().history(profileId.value).any { it.revision > 1 }
+    fun shadowReplayItems(profileId: LocalId): List<ShadowReplayItem> = currentEvaluations(profileId).mapNotNull { evaluation ->
+        val plan = evaluation.planVersionId?.let { database.nutritionPlans().get(it.value)?.toDomain() } ?: return@mapNotNull null
+        val tdee = evaluation.tdeeEstimateId?.let { database.tdeeEstimates().get(it.value)?.toDomain() }
+        val trend = WeightTrend(evaluation.referenceDay, null, null, evaluation.observedWeeklyRateGrams, null,
+            emptyList(), emptyList(), emptyList(), WeightTrendCoverage(evaluation.weightDistinctDays,
+                evaluation.weightSpanDays, evaluation.weightMaximumGapDays), evaluation.weightConfidence, emptySet())
+        val stability = EstimatorStability(evaluation.estimatorStabilityStatus, 0, 0, null, null, null, null, 0,
+            emptySet(), evaluation.estimatorStabilityPolicyVersion.orEmpty())
+        ShadowReplayItem(PlanEvaluatorInput(evaluation.id, profileId, evaluation.referenceDay, plan, trend, tdee,
+            stability, evaluation.safetyStatus, evaluation.inputRevision, evaluation.evaluationMode), evaluation)
+    }
     fun saveEvaluation(evaluation: PlanEvaluation, memory: DecisionStateMemory?) {
         val current = database.planEvaluations().latestForDay(evaluation.profileId.value, evaluation.referenceDay.toEpochDay())
         if (current?.evidenceKey == evaluation.evidenceKey && current.inputRevision == evaluation.inputRevision) return
