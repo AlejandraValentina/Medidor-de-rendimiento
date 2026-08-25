@@ -1,0 +1,419 @@
+FINAL REVIEW FIX 2 — FASE 3.5 SHADOW VALIDATION
+
+Continúa desde tu HEAD local actual de Fase 3.5:
+
+7968fb12c2f37744af575a4dc42ba411d4cbd26f
+
+No rehagas la fase.
+No hagas rebase.
+No hagas squash.
+No hagas push manual.
+No avances a ADVISORY ni a fases posteriores.
+
+El árbol remoto limpio equivalente al estado funcional actual fue reconstruido sobre el PR limpio #15. La auditoría encontró unos pocos defectos semánticos restantes. Corrige únicamente lo indicado aquí y crea un commit adicional focalizado.
+
+==================================================
+1. REPLAY: COMPARAR CONTRA MEMORIA PERSISTIDA REAL
+==================================================
+
+Defecto actual:
+
+Phase2aViewModel construye expectedMemory mediante:
+
+DecisionStateMemoryRebuilder.rebuild(...)
+
+y luego se la pasa al replay.
+
+Eso NO comprueba que decision_state_memory persistida sea correcta: compara una reconstrucción contra otra reconstrucción derivada de la misma historia.
+
+Corrección obligatoria:
+
+- expectedMemory debe provenir de la memoria realmente persistida:
+
+store.evaluationMemory(plan.id)
+
+- ShadowReplayEngine debe comparar su memoria final contra esa memoria persistida real.
+
+- NO comparar revision como diferencia semántica.
+
+- SÍ comparar todos los campos semánticos de DecisionStateMemory:
+  - profileId;
+  - planVersionId;
+  - policyVersion;
+  - lastProcessedDay;
+  - lastEvidenceKey;
+  - directionalCandidate;
+  - qualifiedConfirmationCount;
+  - firstQualifiedDay;
+  - lastQualifiedDay;
+  - lastEffectiveDecision.
+
+Añadir tests:
+
+RM-01
+Misma memoria excepto revision distinta -> MATCH.
+
+RM-02
+Solo lastProcessedDay distinto -> MEMORY_MISMATCH.
+
+RM-03
+Solo profileId distinto -> MEMORY_MISMATCH.
+
+RM-04
+Contador/lastQualified/evidence distintos -> MEMORY_MISMATCH.
+
+==================================================
+2. REPLAY DE VENTANA DESLIZANTE NECESITA MEMORIA INICIAL
+==================================================
+
+Defecto actual:
+
+El reporte selecciona las últimas 28 fechas evaluables, pero ShadowReplayEngine empieza siempre con memory = null.
+
+Si el plan tiene historia anterior a windowStart, la primera evaluación de la ventana pudo depender legítimamente de DecisionStateMemory previa. Un replay que empieza en null no reproduce exactamente esa evaluación.
+
+No ampliar la ventana personal de 28 días.
+
+Separar:
+
+A. ventana de VALIDACIÓN:
+- sigue siendo las últimas 28 fechas evaluables del plan actual;
+- no cambia.
+
+B. contexto de REPLAY:
+- debe disponer de la memoria inicial correcta justo antes de windowStart.
+
+Implementar una solución mínima equivalente a:
+
+ShadowReplayEngine.replay(
+    items,
+    initialMemory,
+    expectedMemory
+)
+
+Semántica:
+
+- initialMemory = reconstrucción determinista de las revisiones vigentes del MISMO plan anteriores estrictamente a windowStart;
+- si no existe historia previa, initialMemory = null;
+- el replay arranca desde initialMemory, no siempre desde null;
+- expectedMemory = memoria persistida real del plan.
+
+Para que la memoria final pueda compararse con la memoria persistida actual:
+
+- los replay items deben incluir las revisiones vigentes del plan desde windowStart hasta la última evaluación vigente del plan, incluyendo evaluaciones no evaluables/INSUFFICIENT_DATA posteriores al último día evaluable si existen;
+- esto NO aumenta evaluableDays ni cambia windowStart/windowEnd del reporte;
+- solo proporciona contexto exacto de replay.
+
+No mezclar planes.
+No usar filas obsoletas de una misma fecha.
+
+Añadir tests:
+
+RW-01
+Plan con >28 días donde la primera fecha de la ventana depende de una confirmación anterior a windowStart -> replay MATCH usando initialMemory.
+
+RW-02
+Mismo caso empezando artificialmente desde null -> no debe aceptarse como equivalente.
+
+RW-03
+Existe una evaluación INSUFFICIENT_DATA posterior al último día evaluable y modifica la memoria persistida -> el replay incluye ese contexto y termina igual a la memoria persistida.
+
+==================================================
+3. TDEE STABLE: CONTAR SOLO FECHAS REALMENTE EVALUADAS
+==================================================
+
+Defecto actual:
+
+ShadowValidationAnalyzer cuenta cualquier TdeeEstimate dentro del span civil de la ventana.
+
+La regla normativa es:
+
+TDEE STABLE en al menos 7 fechas EVALUADAS distintas.
+
+Una fecha con TDEE pero sin PlanEvaluation seleccionada NO puede sumar una confirmación de estabilidad para este criterio.
+
+Corrección:
+
+- el conjunto base son las PlanEvaluation seleccionadas de la ventana;
+- contar STABLE únicamente para esas fechas evaluadas;
+- una fecha TDEE ajena/no evaluada dentro del mismo span no suma;
+- una UNSTABLE ajena/no evaluada tampoco debe bloquear el criterio;
+- una evaluación seleccionada que usó estabilidad UNSTABLE sí bloquea.
+
+La forma más directa y fiel es usar:
+
+PlanEvaluation.estimatorStabilityStatus
+
+porque representa el input de estabilidad realmente usado por PlanEvaluator en esa fecha.
+
+Para exponer versiones TDEE, si se usan tdeeEstimates:
+- restringirlas a los tdeeEstimateId realmente referenciados por las evaluaciones seleccionadas;
+- no usar TDEE ajenos solo porque caen dentro del mismo rango civil.
+
+No inventar métricas faltantes.
+
+Tests obligatorios:
+
+ST-01
+6 evaluaciones seleccionadas STABLE + 1 TDEE STABLE no evaluado dentro del span -> sigue siendo 6 / NOT_MET.
+
+ST-02
+7 evaluaciones seleccionadas STABLE -> MET si los demás requisitos del criterio están bien.
+
+ST-03
+7 evaluaciones seleccionadas STABLE + TDEE UNSTABLE ajeno/no evaluado -> no bloquea.
+
+ST-04
+Una evaluación seleccionada con estimatorStabilityStatus=UNSTABLE -> criterio NOT_MET aunque existan >=7 otras STABLE.
+
+==================================================
+4. PROVENIENCIA: IDEMPOTENCIA NO DEBE PERDER UN OBSERVADO PROSPECTIVO REAL
+==================================================
+
+Defecto actual:
+
+saveEvaluation retorna inmediatamente cuando:
+
+current.evidenceKey == evaluation.evidenceKey
+&& current.inputRevision == evaluation.inputRevision
+
+Eso puede perder una actualización real de procedencia.
+
+Ejemplo:
+- existe una fila legacy/null o un backfill false para hoy;
+- el usuario pulsa realmente “Evaluar hoy en SHADOW”;
+- la evidencia científica es idéntica;
+- incoming prospectiveObserved = true;
+- el early return conserva null/false y pierde el hecho prospectivo real.
+
+Corrección:
+
+La idempotencia debe separar:
+
+A. evidencia de evaluación;
+B. proveniencia de observación.
+
+Si evidenceKey/inputRevision son iguales:
+
+- current=true + incoming cualquier valor -> conservar true, no crear revisión;
+- current=null/false + incoming=true -> actualizar la procedencia a true;
+- current=null + incoming=false -> puede resolverse estructuralmente a false;
+- nunca degradar true a false/null.
+
+Preferencia:
+
+actualizar solo el metadato prospectiveObserved de la fila vigente mediante una operación Room focalizada, SIN crear una revisión artificial y SIN reconstruir DecisionStateMemory, porque la procedencia no altera la decisión.
+
+No cambiar Room v5.
+No agregar columna.
+No crear tabla.
+
+Tests:
+
+PV-01
+Fila legacy null + misma evidence/revision + evaluación prospectiva true -> fila vigente queda true y no aumenta revision/count de filas.
+
+PV-02
+Fila false + misma evidence/revision + true -> queda true sin nueva revisión.
+
+PV-03
+Fila true + incoming false/null -> permanece true.
+
+PV-04
+Misma evidencia/proveniencia ya resuelta -> no-op real.
+
+==================================================
+5. ALTERNANCIAS: RAZONES ESTRUCTURALES VS NUEVA EVIDENCIA
+==================================================
+
+Defecto actual:
+
+analyzeTransitions exige simultáneamente:
+
+evidenceKey distinto
+Y
+inputRevision distinto
+
+para cualquier explicación, incluso POLICY_CHANGED o SAFETY_REVIEW_REQUIRED.
+
+Además DIRECTIONAL_THRESHOLD_MET está en el conjunto genérico de razones justificantes, por lo que una inversión directa ADJUST_DOWN -> ADJUST_UP puede quedar automáticamente justificada simplemente porque el nuevo candidato volvió a cruzar un threshold.
+
+Corrección conservadora:
+
+1. evidenceKey es la identidad canónica. No exigir además inputRevision distinto para reconocer evidencia nueva.
+
+2. Razones estructurales/reset que justifican una transición aunque inputRevision fuente no cambie:
+- PLAN_CHANGED;
+- POLICY_CHANGED;
+- SAFETY_REVIEW_REQUIRED;
+- SAFETY_CAUTION;
+- TDEE_UNSTABLE;
+- TDEE_STABILITY_INSUFFICIENT;
+- COOLDOWN_ACTIVE si aparece en el camino.
+
+3. DIRECTIONAL_THRESHOLD_MET por sí sola NO debe ser una explicación estructural suficiente para ocultar una inversión directa.
+
+4. Una transición direccional opuesta puede considerarse explicada por evidencia ordinaria cuando existe un puente no direccional explícito, por ejemplo MAINTAIN/OBSERVE con WITHIN_TOLERANCE, y posteriormente nueva evidenceKey.
+
+5. Si hay ADJUST_DOWN -> ADJUST_UP directa, sin reset/gate estructural ni puente no direccional explicativo, mantenerla como alternancia que requiere revisión/bloqueo conservador aunque exista una nueva lectura.
+
+Tests:
+
+AL-01
+POLICY_CHANGED con misma inputRevision no se marca injustificada.
+
+AL-02
+SAFETY_REVIEW_REQUIRED con misma inputRevision no se marca injustificada.
+
+AL-03
+ADJUST_DOWN -> ADJUST_UP directa con solo DIRECTIONAL_THRESHOLD_MET y nueva evidencia -> sigue siendo injustificada.
+
+AL-04
+ADJUST_DOWN -> MAINTAIN(WITHIN_TOLERANCE) -> ADJUST_UP con nueva evidenceKey -> explicada.
+
+==================================================
+6. REQUIRED_SCENARIOS DEBE TENER UNA FUENTE REAL EN EL TOOLING
+==================================================
+
+Defecto actual:
+
+ShadowScenarioEvidence ya no se infiere por mera presencia, lo cual es correcto, pero Phase2aViewModel nunca suministra valores verificados. Usa siempre el default false/false/false.
+
+Consecuencia:
+
+REQUIRED_SCENARIOS queda PENDING para siempre en la app y READY_FOR_HUMAN_REVIEW es inalcanzable aunque durante semanas se cumpla todo lo demás.
+
+La especificación permite que los fixtures/replay satisfagan el criterio técnico de escenarios; lo que NO pueden sustituir son los 28 días personales ni los 14 prospectivos.
+
+Implementar una fuente explícita y determinista de verificación de escenarios dentro del tooling, sin persistencia nueva.
+
+Puede ser algo equivalente a:
+
+ShadowScenarioVerifier
+
+JVM puro, que ejecute o evalúe los tres escenarios obligatorios mediante los motores existentes y devuelva ShadowScenarioEvidence.
+
+No hardcodear true.
+Cada boolean debe resultar de comprobar realmente la invariante correspondiente:
+
+OUTLIER:
+- el pesaje atípico permanece registrado;
+- WeightTrend robusto no lo convierte en dato fabricado;
+- la evaluación sigue siendo explicable.
+
+DÍA INCOMPLETO:
+- CLOSED_INCOMPLETE no se convierte en ingesta cero;
+- no es elegible;
+- reduce cobertura/calidad como corresponde.
+
+CORRECCIÓN RETROSPECTIVA:
+- latest revision reemplaza la obsoleta;
+- memory/replay se recompone;
+- un futuro obsoleto es detectado o una secuencia recompuesta produce MATCH.
+
+El verifier puede ser no persistido y ejecutarse bajo demanda/refresh para el inspector.
+
+No crear validation_sessions, replay_runs ni tablas.
+
+Tests:
+
+SC-01/02/03 cada escenario verdadero solo si su invariante realmente pasa.
+SC-04 si se altera deliberadamente la expectativa de un escenario, no reportar verified=true.
+
+==================================================
+7. FR-043: NO SOBREDECLARAR
+==================================================
+
+No inventar una vertical de edición histórica de FoodEntry en esta fase.
+
+Si aún no existe una acción productiva para editar una FoodEntry histórica y disparar toda la recomputación desde el primer día afectado:
+
+- documentar FR-043 como PARCIAL/DEFERRED en ese aspecto;
+- mantener implementado y probado lo que sí existe: revisiones, replay, rebuild de memoria y detección de historia obsoleta;
+- NO reportar FR-043 como plenamente CUMPLIDO si el trigger productivo de edición/recomputación todavía no existe.
+
+Esto NO bloquea el tooling de Fase 3.5 si está documentado honestamente.
+
+==================================================
+8. ROOM Y ALCANCE
+==================================================
+
+Mantener:
+
+Room v5.
+MIGRATION_4_5.
+Exactamente dos columnas nuevas 4->5:
+- estimatorStabilityPolicyVersion nullable;
+- prospectiveObserved nullable.
+
+No MIGRATION_5_6.
+No tablas nuevas.
+
+Mantener:
+
+SHADOW no operativo.
+operationalDecision = null.
+Sin PROPOSAL_ALLOWED en SHADOW.
+BASE_ONLY.
+Sin AdjustmentProposal.
+Sin ADVISORY activo.
+Sin Health Connect/Garmin/readiness.
+
+==================================================
+9. TESTS Y CI LOCAL
+==================================================
+
+Ejecutar nuevamente:
+
+gradle :core:domain:test --no-daemon --console=plain
+ANDROID_HOME=/tmp/android-sdk gradle :data:local:testDebugUnitTest --no-daemon --console=plain
+ANDROID_HOME=/tmp/android-sdk gradle :app:testDebugUnitTest --no-daemon --console=plain
+ANDROID_HOME=/tmp/android-sdk gradle assemble --no-daemon --no-configuration-cache --console=plain
+ANDROID_HOME=/tmp/android-sdk gradle lint --no-daemon --no-configuration-cache --console=plain
+
+git diff --check
+
+Verificar además:
+
+- core:domain JVM puro;
+- solo :app, :core:domain y :data:local;
+- Room v5;
+- MIGRATION_4_5 única 4->5;
+- no 5->6;
+- 0 tablas nuevas;
+- no AdjustmentProposal;
+- no ADVISORY activo;
+- no gradle-wrapper.jar.
+
+==================================================
+10. COMMIT E INFORME
+==================================================
+
+Crear un commit adicional focalizado.
+
+Mensaje sugerido:
+
+Fix Phase 3.5 replay baseline and provenance semantics
+
+Reportar:
+
+- HEAD anterior;
+- HEAD nuevo;
+- archivos modificados;
+- diff stat;
+- resultados RM/RW/ST/PV/AL/SC;
+- tests generales;
+- Room final;
+- tablas nuevas;
+- estado SHADOW/BASE_ONLY;
+- estado honesto de FR-043.
+
+Estado final permitido:
+
+PHASE_3_5_FINAL_REVIEW_READY
+
+o
+PHASE_3_5_BLOCKED
+
+No usar PHASE_3_5_COMPLETE.
+No autorizar ADVISORY.
