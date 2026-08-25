@@ -110,3 +110,31 @@ fun TdeeEstimateEntity.toDomain() = TdeeEstimate(
     inputRevision, evidenceKey,
     estimationReasons.split(',').filter(String::isNotBlank).map(TdeeEstimationReason::valueOf).toSet(), revision,
 )
+
+fun PlanEvaluation.toEntity() = PlanEvaluationEntity(id.value, profileId.value, referenceDay.toEpochDay(), planVersionId?.value,
+    evaluationMode.name, candidateDecision.name, effectiveDecision.name, operationalDecision?.name, operational,
+    authorization.name, safetyStatus.name, qualifiedForHysteresis, reasons.sortedBy { it.name }.joinToString(",") { it.name },
+    windowStart?.toEpochDay(), windowEnd?.toEpochDay(), tdeeEstimateId?.value, tdeeReferenceDay?.toEpochDay(), tdeeRevision,
+    observedWeeklyRateGrams,
+    weightConfidence.name, weightDistinctDays, weightSpanDays, weightMaximumGapDays, tdeeMaturity?.name,
+    estimatorStabilityStatus.name, nutritionQualityLabel?.name, eligibleNutritionDays, requiredNutritionDays,
+    estimatedEnergyPermillion, evaluatorPolicyVersion,
+    evidenceKey, inputRevision, revision)
+fun PlanEvaluationEntity.toDomain() = PlanEvaluation(LocalId(evaluationId), LocalId(profileId), referenceDayEpochDay.toCivilDay(),
+    planVersionId?.let(::LocalId), EvaluationMode.valueOf(evaluationMode), PlanDecision.valueOf(candidateDecision),
+    PlanDecision.valueOf(effectiveDecision), operationalDecision?.let(PlanDecision::valueOf), operational,
+    DecisionAuthorization.valueOf(authorization), SafetyStatus.valueOf(safetyStatus), qualifiedForHysteresis,
+    reasonCodes.split(',').filter(String::isNotBlank).map(PlanEvaluationReason::valueOf).toSet(),
+    windowStartEpochDay?.toCivilDay(), windowEndEpochDay?.toCivilDay(), tdeeEstimateId?.let(::LocalId),
+    tdeeReferenceDayEpochDay?.toCivilDay(), tdeeRevision,
+    observedWeeklyRateGrams, WeightTrendConfidence.valueOf(weightConfidence), weightDistinctDays, weightSpanDays,
+    weightMaximumGapDays, tdeeMaturity?.let(TdeeMaturity::valueOf), EstimatorStabilityStatus.valueOf(estimatorStabilityStatus),
+    nutritionQualityLabel?.let(DataQualityLabel::valueOf), eligibleNutritionDays, requiredNutritionDays,
+    estimatedEnergyPermillion, evaluatorPolicyVersion, evidenceKey, inputRevision, revision)
+fun DecisionStateMemory.toEntity() = DecisionStateMemoryEntity(planVersionId.value, profileId.value, policyVersion,
+    lastProcessedDay.toEpochDay(), lastEvidenceKey, directionalCandidate?.name, qualifiedConfirmationCount,
+    firstQualifiedDay?.toEpochDay(), lastQualifiedDay?.toEpochDay(), lastEffectiveDecision.name, revision)
+fun DecisionStateMemoryEntity.toDomain() = DecisionStateMemory(LocalId(profileId), LocalId(planVersionId), policyVersion,
+    lastProcessedDayEpochDay.toCivilDay(), lastEvidenceKey, directionalCandidate?.let(PlanDecision::valueOf),
+    qualifiedConfirmationCount, firstQualifiedDayEpochDay?.toCivilDay(), lastQualifiedDayEpochDay?.toCivilDay(),
+    PlanDecision.valueOf(lastEffectiveDecision), revision)

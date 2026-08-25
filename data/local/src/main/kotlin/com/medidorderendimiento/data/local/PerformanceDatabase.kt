@@ -9,7 +9,8 @@ import androidx.sqlite.db.SupportSQLiteDatabase
 
 @Database(entities = [UserProfileEntity::class, NutritionPlanVersionEntity::class, WeightMeasurementEntity::class,
     FoodProductEntity::class, FoodEntryEntity::class, NutritionDiaryDayEntity::class, FavoriteFoodEntity::class,
-    SavedMealEntity::class, SavedMealItemEntity::class, TdeeEstimateEntity::class], version = 3, exportSchema = false)
+    SavedMealEntity::class, SavedMealItemEntity::class, TdeeEstimateEntity::class, PlanEvaluationEntity::class,
+    DecisionStateMemoryEntity::class], version = 4, exportSchema = false)
 abstract class PerformanceDatabase : RoomDatabase() {
     abstract fun userProfiles(): UserProfileDao
     abstract fun nutritionPlans(): NutritionPlanDao
@@ -20,6 +21,8 @@ abstract class PerformanceDatabase : RoomDatabase() {
     abstract fun favorites(): FavoriteFoodDao
     abstract fun savedMeals(): SavedMealDao
     abstract fun tdeeEstimates(): TdeeEstimateDao
+    abstract fun planEvaluations(): PlanEvaluationDao
+    abstract fun decisionStateMemory(): DecisionStateMemoryDao
 }
 
 val MIGRATION_1_2 = object : Migration(1, 2) {
@@ -43,7 +46,17 @@ val MIGRATION_2_3 = object : Migration(2, 3) {
         db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS `index_tdee_estimates_profileId_referenceDayEpochDay_revision` ON `tdee_estimates` (`profileId`, `referenceDayEpochDay`, `revision`)")
     }
 }
+val MIGRATION_3_4 = object : Migration(3, 4) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL("CREATE TABLE IF NOT EXISTS `plan_evaluations` (`evaluationId` TEXT NOT NULL, `profileId` TEXT NOT NULL, `referenceDayEpochDay` INTEGER NOT NULL, `planVersionId` TEXT, `evaluationMode` TEXT NOT NULL, `candidateDecision` TEXT NOT NULL, `effectiveDecision` TEXT NOT NULL, `operationalDecision` TEXT, `operational` INTEGER NOT NULL, `authorization` TEXT NOT NULL, `safetyStatus` TEXT NOT NULL, `qualifiedForHysteresis` INTEGER NOT NULL, `reasonCodes` TEXT NOT NULL, `windowStartEpochDay` INTEGER, `windowEndEpochDay` INTEGER, `tdeeEstimateId` TEXT, `tdeeReferenceDayEpochDay` INTEGER, `tdeeRevision` INTEGER, `observedWeeklyRateGrams` INTEGER, `weightConfidence` TEXT NOT NULL, `weightDistinctDays` INTEGER NOT NULL, `weightSpanDays` INTEGER NOT NULL, `weightMaximumGapDays` INTEGER NOT NULL, `tdeeMaturity` TEXT, `estimatorStabilityStatus` TEXT NOT NULL, `nutritionQualityLabel` TEXT, `eligibleNutritionDays` INTEGER, `requiredNutritionDays` INTEGER, `estimatedEnergyPermillion` INTEGER, `evaluatorPolicyVersion` TEXT NOT NULL, `evidenceKey` TEXT NOT NULL, `inputRevision` INTEGER NOT NULL, `revision` INTEGER NOT NULL, PRIMARY KEY(`evaluationId`), FOREIGN KEY(`profileId`) REFERENCES `user_profiles`(`profileId`) ON UPDATE NO ACTION ON DELETE CASCADE, FOREIGN KEY(`planVersionId`) REFERENCES `nutrition_plan_versions`(`planVersionId`) ON UPDATE NO ACTION ON DELETE NO ACTION)")
+        db.execSQL("CREATE INDEX IF NOT EXISTS `index_plan_evaluations_profileId_referenceDayEpochDay` ON `plan_evaluations` (`profileId`,`referenceDayEpochDay`)")
+        db.execSQL("CREATE INDEX IF NOT EXISTS `index_plan_evaluations_planVersionId_referenceDayEpochDay` ON `plan_evaluations` (`planVersionId`,`referenceDayEpochDay`)")
+        db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS `index_plan_evaluations_profileId_referenceDayEpochDay_revision` ON `plan_evaluations` (`profileId`,`referenceDayEpochDay`,`revision`)")
+        db.execSQL("CREATE TABLE IF NOT EXISTS `decision_state_memory` (`planVersionId` TEXT NOT NULL, `profileId` TEXT NOT NULL, `policyVersion` TEXT NOT NULL, `lastProcessedDayEpochDay` INTEGER NOT NULL, `lastEvidenceKey` TEXT NOT NULL, `directionalCandidate` TEXT, `qualifiedConfirmationCount` INTEGER NOT NULL, `firstQualifiedDayEpochDay` INTEGER, `lastQualifiedDayEpochDay` INTEGER, `lastEffectiveDecision` TEXT NOT NULL, `revision` INTEGER NOT NULL, PRIMARY KEY(`planVersionId`), FOREIGN KEY(`profileId`) REFERENCES `user_profiles`(`profileId`) ON UPDATE NO ACTION ON DELETE CASCADE, FOREIGN KEY(`planVersionId`) REFERENCES `nutrition_plan_versions`(`planVersionId`) ON UPDATE NO ACTION ON DELETE CASCADE)")
+        db.execSQL("CREATE INDEX IF NOT EXISTS `index_decision_state_memory_profileId_lastProcessedDayEpochDay` ON `decision_state_memory` (`profileId`,`lastProcessedDayEpochDay`)")
+    }
+}
 
 fun createPerformanceDatabase(context: Context): PerformanceDatabase =
     Room.databaseBuilder(context.applicationContext, PerformanceDatabase::class.java, "performance.db")
-        .addMigrations(MIGRATION_1_2, MIGRATION_2_3).build()
+        .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4).build()

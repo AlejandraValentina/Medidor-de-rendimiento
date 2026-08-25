@@ -61,3 +61,15 @@ import androidx.room.*
     @Query("SELECT * FROM tdee_estimates WHERE profileId = :profileId AND referenceDayEpochDay = :day ORDER BY revision DESC LIMIT 1")
     fun latestForDay(profileId: String, day: Long): TdeeEstimateEntity?
 }
+@Dao interface PlanEvaluationDao {
+    @Insert fun insert(entity: PlanEvaluationEntity)
+    @Query("SELECT * FROM plan_evaluations WHERE profileId = :profileId ORDER BY referenceDayEpochDay, revision") fun history(profileId: String): List<PlanEvaluationEntity>
+    @Query("SELECT p.* FROM plan_evaluations p INNER JOIN (SELECT referenceDayEpochDay, MAX(revision) latestRevision FROM plan_evaluations WHERE profileId = :profileId GROUP BY referenceDayEpochDay) latest ON p.referenceDayEpochDay=latest.referenceDayEpochDay AND p.revision=latest.latestRevision WHERE p.profileId=:profileId ORDER BY p.referenceDayEpochDay")
+    fun currentHistory(profileId: String): List<PlanEvaluationEntity>
+    @Query("SELECT * FROM plan_evaluations WHERE profileId=:profileId AND referenceDayEpochDay=:day ORDER BY revision DESC LIMIT 1") fun latestForDay(profileId: String, day: Long): PlanEvaluationEntity?
+}
+@Dao interface DecisionStateMemoryDao {
+    @Upsert fun save(entity: DecisionStateMemoryEntity)
+    @Query("SELECT * FROM decision_state_memory WHERE planVersionId=:planVersionId") fun get(planVersionId: String): DecisionStateMemoryEntity?
+    @Query("DELETE FROM decision_state_memory WHERE planVersionId=:planVersionId") fun delete(planVersionId: String): Int
+}

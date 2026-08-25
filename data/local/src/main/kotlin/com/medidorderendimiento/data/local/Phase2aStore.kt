@@ -108,4 +108,22 @@ class Phase2aStore(private val database: PerformanceDatabase) {
         if (prepared.needsInsert) database.tdeeEstimates().insert(prepared.estimate.toEntity(profileId, stability))
         return prepared.estimate
     }
+
+    fun evaluationMemory(planVersionId: LocalId): DecisionStateMemory? = database.decisionStateMemory().get(planVersionId.value)?.toDomain()
+    fun currentEvaluations(profileId: LocalId): List<PlanEvaluation> = database.planEvaluations().currentHistory(profileId.value).map(PlanEvaluationEntity::toDomain)
+    fun saveEvaluation(evaluation: PlanEvaluation, memory: DecisionStateMemory?) {
+        val current = database.planEvaluations().latestForDay(evaluation.profileId.value, evaluation.referenceDay.toEpochDay())
+        if (current?.evidenceKey == evaluation.evidenceKey && current.inputRevision == evaluation.inputRevision) return
+        database.runInTransaction {
+            database.planEvaluations().insert(evaluation.copy(revision = (current?.revision ?: 0) + 1).toEntity())
+            val rebuilt = DecisionStateMemoryRebuilder.rebuild(
+                database.planEvaluations().currentHistory(evaluation.profileId.value).map(PlanEvaluationEntity::toDomain))
+            (rebuilt ?: memory)?.let { database.decisionStateMemory().save(it.toEntity()) }
+        }
+    }
+    fun rebuildDecisionMemory(profileId: LocalId): DecisionStateMemory? {
+        val rebuilt = DecisionStateMemoryRebuilder.rebuild(currentEvaluations(profileId))
+        rebuilt?.let { database.decisionStateMemory().save(it.toEntity()) }
+        return rebuilt
+    }
 }
