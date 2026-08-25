@@ -23,8 +23,8 @@ class MigrationTest {
         }).build())
         val db = helper.writableDatabase
         MIGRATION_4_5.migrate(db)
-        db.query("SELECT marker, estimatorStabilityPolicyVersion FROM plan_evaluations WHERE evaluationId='legacy'").use {
-            assertTrue(it.moveToFirst()); assertEquals("preserved", it.getString(0)); assertTrue(it.isNull(1))
+        db.query("SELECT marker, estimatorStabilityPolicyVersion, prospectiveObserved FROM plan_evaluations WHERE evaluationId='legacy'").use {
+            assertTrue(it.moveToFirst()); assertEquals("preserved", it.getString(0)); assertTrue(it.isNull(1)); assertTrue(it.isNull(2))
         }
         val tables = db.query("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name").use { cursor ->
             buildList { while (cursor.moveToNext()) add(cursor.getString(0)) }

@@ -113,7 +113,11 @@ class Phase2aStore(private val database: PerformanceDatabase) {
     fun currentEvaluations(profileId: LocalId): List<PlanEvaluation> = database.planEvaluations().currentHistory(profileId.value).map(PlanEvaluationEntity::toDomain)
     fun hasRetrospectiveEvaluationRevision(profileId: LocalId): Boolean =
         database.planEvaluations().history(profileId.value).any { it.revision > 1 }
-    fun shadowReplayItems(profileId: LocalId): List<ShadowReplayItem> = currentEvaluations(profileId).mapNotNull { evaluation ->
+    fun shadowReplayItems(profileId: LocalId, planVersionId: LocalId? = null, start: CivilDay? = null, end: CivilDay? = null): List<ShadowReplayItem> =
+        currentEvaluations(profileId).filter { evaluation ->
+            (planVersionId == null || evaluation.planVersionId == planVersionId) &&
+                (start == null || evaluation.referenceDay >= start) && (end == null || evaluation.referenceDay <= end)
+        }.mapNotNull { evaluation ->
         val plan = evaluation.planVersionId?.let { database.nutritionPlans().get(it.value)?.toDomain() } ?: return@mapNotNull null
         val tdee = evaluation.tdeeEstimateId?.let { database.tdeeEstimates().get(it.value)?.toDomain() }
         val trend = WeightTrend(evaluation.referenceDay, null, null, evaluation.observedWeeklyRateGrams, null,
@@ -128,7 +132,13 @@ class Phase2aStore(private val database: PerformanceDatabase) {
         val current = database.planEvaluations().latestForDay(evaluation.profileId.value, evaluation.referenceDay.toEpochDay())
         if (current?.evidenceKey == evaluation.evidenceKey && current.inputRevision == evaluation.inputRevision) return
         database.runInTransaction {
-            database.planEvaluations().insert(evaluation.copy(revision = (current?.revision ?: 0) + 1).toEntity())
+            val provenance = when {
+                current?.prospectiveObserved == true -> true
+                evaluation.prospectiveObserved != null -> evaluation.prospectiveObserved
+                else -> current?.prospectiveObserved
+            }
+            database.planEvaluations().insert(evaluation.copy(revision = (current?.revision ?: 0) + 1,
+                prospectiveObserved = provenance).toEntity())
             val rebuilt = DecisionStateMemoryRebuilder.rebuild(
                 database.planEvaluations().currentHistory(evaluation.profileId.value).map(PlanEvaluationEntity::toDomain))
             (rebuilt ?: memory)?.let { database.decisionStateMemory().save(it.toEntity()) }

@@ -120,7 +120,7 @@ fun PlanEvaluation.toEntity() = PlanEvaluationEntity(id.value, profileId.value, 
     estimatorStabilityStatus.name, estimatorStabilityPolicyVersion, nutritionQualityLabel?.name,
     eligibleNutritionDays, requiredNutritionDays,
     estimatedEnergyPermillion, evaluatorPolicyVersion,
-    evidenceKey, inputRevision, revision)
+    evidenceKey, inputRevision, revision, prospectiveObserved)
 fun PlanEvaluationEntity.toDomain() = PlanEvaluation(LocalId(evaluationId), LocalId(profileId), referenceDayEpochDay.toCivilDay(),
     planVersionId?.let(::LocalId), EvaluationMode.valueOf(evaluationMode), PlanDecision.valueOf(candidateDecision),
     PlanDecision.valueOf(effectiveDecision), operationalDecision?.let(PlanDecision::valueOf), operational,
@@ -132,7 +132,7 @@ fun PlanEvaluationEntity.toDomain() = PlanEvaluation(LocalId(evaluationId), Loca
     weightMaximumGapDays, tdeeMaturity?.let(TdeeMaturity::valueOf), EstimatorStabilityStatus.valueOf(estimatorStabilityStatus),
     estimatorStabilityPolicyVersion,
     nutritionQualityLabel?.let(DataQualityLabel::valueOf), eligibleNutritionDays, requiredNutritionDays,
-    estimatedEnergyPermillion, evaluatorPolicyVersion, evidenceKey, inputRevision, revision)
+    estimatedEnergyPermillion, evaluatorPolicyVersion, evidenceKey, inputRevision, revision, prospectiveObserved)
 fun DecisionStateMemory.toEntity() = DecisionStateMemoryEntity(planVersionId.value, profileId.value, policyVersion,
     lastProcessedDay.toEpochDay(), lastEvidenceKey, directionalCandidate?.name, qualifiedConfirmationCount,
     firstQualifiedDay?.toEpochDay(), lastQualifiedDay?.toEpochDay(), lastEffectiveDecision.name, revision)

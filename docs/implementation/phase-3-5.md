@@ -8,23 +8,25 @@ Esta entrega incorpora herramientas locales para acumular, inspeccionar y reprod
 
 ## Evaluación prospectiva
 
-El inspector exige seleccionar explícitamente `CLEAR`, `CAUTION` o `REVIEW_REQUIRED`; no existe default ni se infiere `CLEAR`. “Evaluar hoy en SHADOW” usa el plan, WeightTrend, TDEE y estabilidad vigentes, deriva `inputRevision` desde el TDEE y persiste mediante el flujo idempotente existente. Misma fecha/evidence/revisión no crea otra fila; evidencia nueva crea una revisión del día.
+El inspector exige seleccionar explícitamente `CLEAR`, `CAUTION` o `REVIEW_REQUIRED`; no existe default ni se infiere `CLEAR`. “Evaluar hoy en SHADOW” usa el plan, WeightTrend, TDEE y estabilidad vigentes, deriva `inputRevision` desde sus revisiones y persiste mediante el flujo idempotente existente. La fila queda marcada `prospectiveObserved=true` solamente por este flujo ejecutado en su fecha civil. Misma fecha/evidence/revisión no crea otra fila; una revisión retrospectiva conserva la procedencia prospectiva original.
 
 SHADOW mantiene `operational=false`, `operationalDecision=null`, el plan intacto y BASE_ONLY. No existen aceptación, propuesta ni activación ADVISORY.
 
 ## Criterios
 
-El analizador calcula bajo demanda desde revisiones vigentes y segmenta por `NutritionPlanVersion`: ventana personal, operación prospectiva, peso/cobertura nutricional, energía estimada según el límite ya versionado en `TdeePolicy`, TDEE estable, alternancias, consistencia, replay y escenarios obligatorios. Los candidatos direccionales y la aprobación final permanecen `HUMAN_REVIEW_REQUIRED` porque requieren juicio humano.
+El analizador calcula bajo demanda desde revisiones vigentes y segmenta por `NutritionPlanVersion`. Selecciona las últimas 28 fechas evaluables y calcula peso, span, gap y nutrición desde mediciones y días reales dentro de esa misma ventana; no reutiliza los totales del último snapshot TDEE. La energía estimada usa el límite versionado en `TdeePolicy`. Los candidatos direccionales y la aprobación final permanecen `HUMAN_REVIEW_REQUIRED` porque requieren juicio humano.
 
-Outlier, día incompleto y corrección retrospectiva pueden verificarse con replay/fixtures, pero no cuentan como días personales prospectivos. Un cambio de plan inicia una ventana separada.
+Outlier, día incompleto y corrección retrospectiva solo satisfacen el criterio cuando su comportamiento fue verificado; su mera presencia no basta. Pueden verificarse con replay/fixtures, pero no cuentan como días personales prospectivos. Un cambio de plan inicia una ventana separada.
 
 ## Replay
 
-`ShadowReplayEngine` es JVM puro, ordena cronológicamente, usa solo la última revisión de cada fecha y no persiste ni modifica la memoria productiva. Una fila legacy sin `estimatorStabilityPolicyVersion` produce input incompleto: nunca se inventa ni se extrae desde `evidenceKey`.
+`ShadowReplayEngine` es JVM puro, ordena cronológicamente, usa solo la última revisión de cada fecha y compara tanto outputs como el contenido semántico de `DecisionStateMemory`; su contador interno de revisión no define equivalencia. El reporte acota el replay al plan y ventana inspeccionados, por lo que una fila legacy ajena no bloquea el plan vigente. El replay no persiste ni modifica memoria productiva. Una fila legacy relevante sin `estimatorStabilityPolicyVersion` produce input incompleto.
 
 ## Persistencia
 
-Room pasa de 4 a 5 mediante `MIGRATION_4_5`, que añade solamente la columna nullable `plan_evaluations.estimatorStabilityPolicyVersion`. El null conserva honestamente filas legacy; las evaluaciones nuevas guardan la policy real. No se crean tablas.
+Room pasa de 4 a 5 mediante `MIGRATION_4_5`, que añade solamente las columnas nullable `plan_evaluations.estimatorStabilityPolicyVersion` y `prospectiveObserved`. Los null conservan honestamente filas legacy; no se infiere procedencia ni policy. No se crean tablas.
+
+La corrección retrospectiva está demostrada en dominio/store mediante selección de última revisión, identificación de ventanas TDEE afectadas y reconstrucción de memoria. La recomputación completa originada por edición histórica de `FoodEntry` queda limitada hasta que exista esa vertical de edición; no se declara FR-043 cerrada por una ruta inexistente y no se crea cola de recálculo.
 
 ## Validación real pendiente
 

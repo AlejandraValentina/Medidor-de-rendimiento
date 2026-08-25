@@ -41,7 +41,7 @@ data class PlanEvaluation(
     val estimatorStabilityPolicyVersion: String?,
     val nutritionQualityLabel: DataQualityLabel?, val eligibleNutritionDays: Int?, val requiredNutritionDays: Int?,
     val estimatedEnergyPermillion: Int?, val evaluatorPolicyVersion: String, val evidenceKey: String,
-    val inputRevision: Long, val revision: Long = 1,
+    val inputRevision: Long, val revision: Long = 1, val prospectiveObserved: Boolean? = null,
 ) {
     init {
         require(inputRevision > 0 && revision > 0)

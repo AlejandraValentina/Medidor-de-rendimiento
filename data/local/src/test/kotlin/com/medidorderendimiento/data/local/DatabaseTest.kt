@@ -173,13 +173,14 @@ class DatabaseTest {
             estimatorStabilityPolicyVersion = "stability-test-v2",
             nutritionQualityLabel = DataQualityLabel.HIGH, eligibleNutritionDays = 20, requiredNutritionDays = 14,
             estimatedEnergyPermillion = 0, evaluatorPolicyVersion = PlanEvaluatorPolicy().version, evidenceKey = id,
-            inputRevision = revision, revision = revision,
+            inputRevision = revision, revision = revision, prospectiveObserved = true,
         )
         database.planEvaluations().insert(evaluation("one",1,PlanDecision.OBSERVE).toEntity())
         database.planEvaluations().insert(evaluation("two",2,PlanDecision.MAINTAIN).toEntity())
         val currentEvaluation = database.planEvaluations().currentHistory("profile").single().toDomain()
         assertEquals(PlanDecision.MAINTAIN, currentEvaluation.effectiveDecision)
         assertEquals("stability-test-v2", currentEvaluation.estimatorStabilityPolicyVersion)
+        assertEquals(true, currentEvaluation.prospectiveObserved)
         val memory = DecisionStateMemory(LocalId("profile"), LocalId("plan"), "policy", day, "e-2", PlanDecision.ADJUST_DOWN,
             1, day, day, PlanDecision.MAINTAIN, 2)
         database.decisionStateMemory().save(memory.toEntity())
@@ -196,9 +197,10 @@ class DatabaseTest {
         store.saveEvaluation(evaluation("qualified-2", 1, PlanDecision.ADJUST_DOWN, secondDay, qualified = true), null)
         assertEquals(2, store.evaluationMemory(LocalId("plan"))?.qualifiedConfirmationCount)
         store.saveEvaluation(evaluation("corrected-1", 1, PlanDecision.MAINTAIN, firstDay,
-            candidate = PlanDecision.MAINTAIN, qualified = false), null)
+            candidate = PlanDecision.MAINTAIN, qualified = false).copy(prospectiveObserved = false), null)
         assertEquals(2, database.planEvaluations().history("profile").count { it.referenceDayEpochDay == firstDay.toEpochDay() })
         assertEquals(1, store.evaluationMemory(LocalId("plan"))?.qualifiedConfirmationCount)
+        assertEquals(true, database.planEvaluations().latestForDay("profile", firstDay.toEpochDay())?.prospectiveObserved)
         assertEquals(2, store.currentEvaluations(LocalId("profile")).count { it.referenceDay in listOf(firstDay, secondDay) })
         val historyBeforeReplay = database.planEvaluations().history("profile")
         val memoryBeforeReplay = store.evaluationMemory(LocalId("plan"))

@@ -7,6 +7,18 @@ class PlanEvaluatorTest {
     private val evaluator = PlanEvaluator()
     private val profile = LocalId("profile")
 
+    @Test fun `VT-02 VT-03 VT-04 explicit safety drives normal limited and blocked shadow evaluations`() {
+        val clear = evaluator.evaluate(input(0, -80, safety = SafetyStatus.CLEAR), null).evaluation
+        assertEquals(PlanDecision.ADJUST_DOWN, clear.candidateDecision)
+        assertTrue(clear.qualifiedForHysteresis)
+        val caution = evaluator.evaluate(input(0, -80, safety = SafetyStatus.CAUTION), null).evaluation
+        assertEquals(PlanDecision.OBSERVE, caution.effectiveDecision)
+        assertTrue(PlanEvaluationReason.SAFETY_CAUTION in caution.reasons)
+        val review = evaluator.evaluate(input(0, -80, safety = SafetyStatus.REVIEW_REQUIRED), null).evaluation
+        assertEquals(DecisionAuthorization.BLOCKED, review.authorization)
+        assertTrue(PlanEvaluationReason.SAFETY_REVIEW_REQUIRED in review.reasons)
+    }
+
     @Test fun `PE-01 missing evidence is insufficient`() = assertEquals(PlanDecision.INSUFFICIENT_DATA,
         evaluator.evaluate(input(0, observed = null), null).evaluation.candidateDecision)
 

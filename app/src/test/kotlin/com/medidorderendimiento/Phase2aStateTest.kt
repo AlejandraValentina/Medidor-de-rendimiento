@@ -15,13 +15,29 @@ class Phase2aStateTest {
     }
 
     @Test fun `BASE_ONLY remains unchanged when shadow tooling is ready for human review`() {
+        val planStart = CivilDay.parse(day.value.minusDays(20).toString())
         val plan = NutritionPlanVersion(LocalId("shadow-plan"), NutritionGoal.LOSS, EnergyAmount.ofKilocalories(2_050),
-            null, TargetWeeklyRate.ofGrams(350), day, acceptance = PlanAcceptance(Instant.EPOCH))
+            null, TargetWeeklyRate.ofGrams(350), planStart, acceptance = PlanAcceptance(Instant.EPOCH))
         val report = ShadowValidationReport(plan.id, "shadow-validation-v1", setOf("plan-evaluator-v1"),
             setOf("stability-v1"), setOf("tdee-v1"), day, day, 28, 14, 8, 28, 4,
             24, 28, 857_142, 0, DataQualityLabel.HIGH, 7, 0, 1, 0, emptyList(), emptyList(),
             ShadowValidationStatus.READY_FOR_HUMAN_REVIEW)
-        val state = Phase2aUiState(civilDay = day, plan = plan, shadowValidationReport = report)
+        val quality = NutritionQuality(28, 28, 28, 0, 0, 0, 0, 1_000_000, DataQualityLabel.HIGH, emptySet())
+        fun input(reference: CivilDay, id: String) = PlanEvaluatorInput(LocalId(id), LocalId("profile"), reference, plan,
+            WeightTrend(reference, null, null, -80, 20, emptyList(), emptyList(), emptyList(), WeightTrendCoverage(8, 28, 3),
+                WeightTrendConfidence.HIGH, emptySet()),
+            TdeeEstimate(LocalId("tdee-$id"), reference, TdeeEstimateKind.OBSERVATIONAL, EnergyAmount.ofKilocalories(2_300),
+                maturity = TdeeMaturity.HIGH_QUALITY, nutritionQuality = quality, weightConfidence = WeightTrendConfidence.HIGH,
+                stabilityStatus = EstimatorStabilityStatus.STABLE, windowStart = planStart, windowEnd = reference,
+                algorithmVersion = "a", policyVersion = "tdee-v1", inputRevision = 1, evidenceKey = "tdee-$id"),
+            EstimatorStability(EstimatorStabilityStatus.STABLE, 10, 14, null, 1, 1, 1, 0, emptySet(), "stability-v1"),
+            SafetyStatus.CLEAR, 1)
+        val first = PlanEvaluator().evaluate(input(CivilDay.parse(day.value.minusDays(2).toString()), "first"), null)
+        val effective = PlanEvaluator().evaluate(input(day, "second"), first.memory).evaluation
+        assertEquals(PlanDecision.ADJUST_DOWN, effective.candidateDecision)
+        assertEquals(PlanDecision.ADJUST_DOWN, effective.effectiveDecision)
+        val state = Phase2aUiState(civilDay = day, plan = plan, shadowValidationReport = report,
+            shadowEvaluations = listOf(effective))
         assertEquals(plan.baseDailyEnergy, state.recommendedToday)
     }
 

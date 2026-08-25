@@ -53,12 +53,16 @@ class Phase2aViewModel(
             prepared.copy(estimate = prepared.estimate.copy(stabilityStatus = stability.status)), stability)
         val plan = store.latestPlan(profileId)
         val evaluations = store.currentEvaluations(profileId)
-        val replay = replayEngine.replay(store.shadowReplayItems(profileId))
-        val report = shadowAnalyzer.analyze(ShadowValidationInput(plan?.id, evaluations, store.tdeeHistory(profileId),
-            evaluations.filter { it.estimatorStabilityPolicyVersion != null }.map { it.referenceDay }.toSet(), replay.status,
-            ShadowScenarioEvidence(trend.possibleOutliers.isNotEmpty(),
-                nutritionDays.any { it.state == TdeeDiaryState.CLOSED_INCOMPLETE },
-                store.hasRetrospectiveEvaluationRevision(profileId))))
+        val validationInput = ShadowValidationInput(plan?.id, evaluations, store.tdeeHistory(profileId), weights,
+            store.tdeeNutritionDays(profileId, evaluations.minOfOrNull { it.referenceDay } ?: day, day))
+        val window = shadowAnalyzer.selectWindow(validationInput)
+        val expectedMemory = DecisionStateMemoryRebuilder.rebuild(evaluations.filter { evaluation ->
+            evaluation.planVersionId == plan?.id && (window.first?.let { evaluation.referenceDay >= it } ?: true) &&
+                (window.second?.let { evaluation.referenceDay <= it } ?: true)
+        })
+        val replay = replayEngine.replay(store.shadowReplayItems(profileId, plan?.id, window.first, window.second),
+            expectedMemory)
+        val report = shadowAnalyzer.analyze(validationInput.copy(replayStatus = replay.status))
         _state.value = Phase2aUiState(
             civilDay = day,
             plan = plan,
@@ -94,7 +98,7 @@ class Phase2aViewModel(
             val result = planEvaluator.evaluate(PlanEvaluatorInput(LocalId(UUID.randomUUID().toString()), profileId,
                 day, plan, trend, tdee, stability, safety, inputRevision, EvaluationMode.SHADOW),
                 store.evaluationMemory(plan.id))
-            store.saveEvaluation(result.evaluation, result.memory)
+            store.saveEvaluation(result.evaluation.copy(prospectiveObserved = true), result.memory)
             refresh()
         }
     }
