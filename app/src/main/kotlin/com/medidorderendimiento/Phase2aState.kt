@@ -23,6 +23,9 @@ data class Phase2aUiState(
     val weightTrend: WeightTrend? = null,
     val tdeeEstimate: TdeeEstimate? = null,
     val estimatorStability: EstimatorStability? = null,
+    val selectedSafetyStatus: SafetyStatus? = null,
+    val shadowValidationReport: ShadowValidationReport? = null,
+    val shadowEvaluations: List<PlanEvaluation> = emptyList(),
     val products: List<StoredFoodProduct> = emptyList(),
     val entries: List<FoodEntry> = emptyList(),
     val diaryState: DiaryClosureState = DiaryClosureState.OPEN,
@@ -39,6 +42,8 @@ data class Phase2aUiState(
         return if (base.millicalories >= consumed.millicalories) base - consumed else EnergyAmount.ofMillicalories(0)
     }
 }
+
+fun canEvaluateShadow(safetyStatus: SafetyStatus?): Boolean = safetyStatus != null
 
 fun summarize(entries: List<FoodEntry>): DailySummary {
     if (entries.isEmpty()) return DailySummary(null, null, null, null, false, false)

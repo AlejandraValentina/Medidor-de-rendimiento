@@ -22,6 +22,9 @@ class Phase2aViewModel(
     private val tdeePolicy = TdeePolicy()
     private val tdeeEstimator = TdeeEstimator(tdeePolicy)
     private val stabilityCalculator = EstimatorStabilityCalculator()
+    private val planEvaluator = PlanEvaluator()
+    private val shadowAnalyzer = ShadowValidationAnalyzer()
+    private val replayEngine = ShadowReplayEngine()
     private val profileId = LocalId("local-profile")
     private val _state = MutableStateFlow(Phase2aUiState())
     val state: StateFlow<Phase2aUiState> = _state
@@ -48,13 +51,28 @@ class Phase2aViewModel(
         val stability = stabilityCalculator.calculate(prepared.currentHistory)
         val persistedEstimate = store.saveTdee(profileId,
             prepared.copy(estimate = prepared.estimate.copy(stabilityStatus = stability.status)), stability)
+        val plan = store.latestPlan(profileId)
+        val evaluations = store.currentEvaluations(profileId)
+        val validationInput = ShadowValidationInput(plan?.id, evaluations, store.tdeeHistory(profileId), weights,
+            store.tdeeNutritionDays(profileId, evaluations.minOfOrNull { it.referenceDay } ?: day, day))
+        val window = shadowAnalyzer.selectWindow(validationInput)
+        val expectedMemory = DecisionStateMemoryRebuilder.rebuild(evaluations.filter { evaluation ->
+            evaluation.planVersionId == plan?.id && (window.first?.let { evaluation.referenceDay >= it } ?: true) &&
+                (window.second?.let { evaluation.referenceDay <= it } ?: true)
+        })
+        val replay = replayEngine.replay(store.shadowReplayItems(profileId, plan?.id, window.first, window.second),
+            expectedMemory)
+        val report = shadowAnalyzer.analyze(validationInput.copy(replayStatus = replay.status))
         _state.value = Phase2aUiState(
             civilDay = day,
-            plan = store.latestPlan(profileId),
+            plan = plan,
             latestWeight = weights.maxByOrNull(WeightMeasurement::recordedAt),
             weightTrend = trend,
             tdeeEstimate = persistedEstimate,
             estimatorStability = stability,
+            selectedSafetyStatus = _state.value.selectedSafetyStatus,
+            shadowValidationReport = report,
+            shadowEvaluations = evaluations,
             products = store.products(),
             entries = store.entries(profileId, day),
             diaryState = store.diary(profileId, day)?.state ?: DiaryClosureState.OPEN,
@@ -62,6 +80,27 @@ class Phase2aViewModel(
             recentProducts = store.recentProducts(profileId),
             savedMeals = store.savedMeals(profileId),
         )
+    }
+
+    fun selectShadowSafety(status: SafetyStatus) { _state.value = _state.value.copy(selectedSafetyStatus = status) }
+
+    fun evaluateShadowToday() {
+        val snapshot = _state.value
+        val safety = snapshot.selectedSafetyStatus ?: return
+        val day = snapshot.civilDay ?: return
+        val plan = snapshot.plan ?: return
+        val trend = snapshot.weightTrend ?: return
+        val tdee = snapshot.tdeeEstimate ?: return
+        val stability = snapshot.estimatorStability ?: return
+        viewModelScope.launch(Dispatchers.IO) {
+            val weightRevision = store.weights(profileId).maxOfOrNull(WeightMeasurement::revision) ?: 1
+            val inputRevision = ShadowInputRevision.combine(tdee.inputRevision, tdee.revision, weightRevision)
+            val result = planEvaluator.evaluate(PlanEvaluatorInput(LocalId(UUID.randomUUID().toString()), profileId,
+                day, plan, trend, tdee, stability, safety, inputRevision, EvaluationMode.SHADOW),
+                store.evaluationMemory(plan.id))
+            store.saveEvaluation(result.evaluation.copy(prospectiveObserved = true), result.memory)
+            refresh()
+        }
     }
 
     fun addPlan(goal: NutritionGoal, energyKcal: Long, proteinGrams: Long?, rateGrams: Long?) = viewModelScope.launch(Dispatchers.IO) {
